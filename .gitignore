@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments (uv)
+.venv/
+venv/
+env/
+
+# uv lock (commit uv.lock if you want reproducible installs)
+# uv.lock
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Generated outputs — keep directory structure, ignore generated files
+results/figures/*.png
+results/figures/*.pdf
+results/tables/*.csv
+
+# Raw and processed data — add specific files to track if needed
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
