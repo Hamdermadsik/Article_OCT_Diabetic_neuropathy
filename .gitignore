@@ -29,6 +29,7 @@ results/figures/*.pdf
 results/tables/*.csv
 
 # Raw and processed data — add specific files to track if needed
+data/
 data/raw/*
 data/processed/*
 !data/raw/.gitkeep
