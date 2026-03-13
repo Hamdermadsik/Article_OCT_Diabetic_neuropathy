@@ -1,29 +1,27 @@
 import logging
+log = logging.getLogger(__name__)
+
 import time
 from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Subset
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import segmentation_models_pytorch as smp
 
-from src.retinal_thickness.dataloaders import RetinaSegDataset_size_n
-from src.retinal_thickness.functions import train_one_epoch, validate_one_epoch, CombinedLoss
+from dataloaders import OCT_SKIN
+from functions import train_one_epoch, validate_one_epoch, CombinedLoss
 
-# Initialize logger
-log = logging.getLogger(__name__)
-
-@hydra.main(config_path="../../configs", config_name="config", version_base="1.2")
+@hydra.main(config_path="../configs", config_name="config", version_base="1.2")
 def main(cfg: DictConfig):
+    # Log configuration (Hydra allows overriding these via CLI, e.g., hyperparameters.learning_rate=0.01)
     log.info(f"Configuration:\n{cfg}")
     
     # Extract params from config
     hp = cfg.hyperparameters
     
-    n_samples_ = hp.n_samples
-
     # --- 1. DEVICE ALLOCATION ---
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info(f"Using device: {DEVICE}")
@@ -42,35 +40,40 @@ def main(cfg: DictConfig):
     # --- 3. DATA LOADERS ---
     TARGET_SIZE = (512, 512)
     
-    # Initialize a base dataset WITHOUT augmentations.
-    base_dataset = RetinaSegDataset_size_n(
+    # Create two separate dataset instances to control augmentation independently
+    train_base_dataset = OCT_SKIN(
         images_dir=images_path, 
         masks_dir=masks_path,
         target_size=TARGET_SIZE,
-        augment=False,
-        n_samples=n_samples_,
-        noise_sigma=hp.noise_sigma
+        augment=True
+    )
+
+    val_base_dataset = OCT_SKIN(
+        images_dir=images_path, 
+        masks_dir=masks_path,
+        target_size=TARGET_SIZE,
+        augment=False
     )
 
     # Calculate Split Sizes
-    total_samples = len(base_dataset)
+    total_samples = len(train_base_dataset)
+    if total_samples == 0:
+        log.error(f"No valid image/mask pairs found in {images_path}! Check file extensions (.jpeg) and naming.")
+        return
+
     val_samples = int(hp.val_split_ratio * total_samples)
     train_samples = total_samples - val_samples
-    log.info(f"Splitting data: Train={train_samples} | Validation={val_samples}")
+    log.info(f"Data mapping: total={total_samples} | Train={train_samples} | Validation={val_samples}")
 
-    # Perform Random Split
+    # Create fixed internal indices and shuffle once
     torch.manual_seed(hp.seed)
-    train_subset, val_subset = random_split(base_dataset, [train_samples, val_samples])
+    shuffled_indices = torch.randperm(total_samples).tolist()
+    
+    train_indices = shuffled_indices[val_samples:]
+    val_indices = shuffled_indices[:val_samples]
 
-    # Assign augmented dataset to train_subset
-    train_subset.dataset = RetinaSegDataset_size_n(
-        images_dir=images_path, 
-        masks_dir=masks_path,
-        target_size=TARGET_SIZE,
-        augment=True,
-        n_samples=n_samples_,
-        noise_sigma=hp.noise_sigma
-    )
+    train_subset = Subset(train_base_dataset, train_indices)
+    val_subset = Subset(val_base_dataset, val_indices)
 
     train_dataloader = DataLoader(
         train_subset,
@@ -112,14 +115,8 @@ def main(cfg: DictConfig):
     # Ensure models directory exists
     (OUTPUT_DIR / "models").mkdir(parents=True, exist_ok=True)
 
-    if hp.noise_sigma > 0:  
-        log.info(f"Training with Gaussian Noise σ={hp.noise_sigma}")
-        BEST_MODEL_PATH = OUTPUT_DIR / "models" / f"best_unet_model_N{n_samples_}_noise{hp.noise_sigma}.pth"
-        HISTORY_PATH = OUTPUT_DIR / "models" / f"training_history_N{n_samples_}_noise{hp.noise_sigma}.pt"
-    else:
-        log.info("Training without Gaussian Noise")
-        BEST_MODEL_PATH = OUTPUT_DIR / "models" / f"best_unet_model_{n_samples_}.pth"
-        HISTORY_PATH = OUTPUT_DIR / "models" / f"training_history_{n_samples_}.pt"
+    BEST_MODEL_PATH = OUTPUT_DIR / "models" / "best_unet_model.pth"
+    HISTORY_PATH = OUTPUT_DIR / "models" / "training_history.pt"
 
     history = {'train_loss': [], 'val_loss': [], 'val_dice': [], 'epoch': [], 'test_dice': None}
     best_val_dice = 0.0
@@ -157,16 +154,18 @@ def main(cfg: DictConfig):
     TEST_IMAGES_DIR = orig_cwd / 'data' / 'test' / 'images'
     TEST_MASKS_DIR = orig_cwd / 'data' / 'test' / 'mask'
     
-    if TEST_IMAGES_DIR.exists() and TEST_MASKS_DIR.exists():
-        num_test_images = len(list(TEST_IMAGES_DIR.glob("*")))
-        log.info(f"Found {num_test_images} images at {TEST_IMAGES_DIR}. Loading best model for evaluation...")
+    # Check if directory exists and has files
+    test_files = list(TEST_IMAGES_DIR.glob("*.jpeg")) if TEST_IMAGES_DIR.exists() else []
+    
+    if TEST_IMAGES_DIR.exists() and TEST_MASKS_DIR.exists() and len(test_files) > 0:
+        log.info(f"Found {len(test_files)} images at {TEST_IMAGES_DIR}. Loading best model for evaluation...")
         
         # Load Best Model
         model.load_state_dict(torch.load(BEST_MODEL_PATH))
         model.eval()
         
         # Create Test Loader (No Augmentation, No Noise)
-        test_dataset = RetinaSegDataset_size_n(
+        test_dataset = OCT_SKIN(
             images_dir=TEST_IMAGES_DIR, 
             masks_dir=TEST_MASKS_DIR,
             target_size=TARGET_SIZE,
