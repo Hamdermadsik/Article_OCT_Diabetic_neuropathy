@@ -1,6 +1,8 @@
+Loading images from: /zhome/29/b/146867/Article_OCT/Article_OCT_Diabetic_neuropathy/data/test/images
+Loading masks from: /zhome/29/b/146867/Article_OCT/Article_OCT_Diabetic_neuropathy/data/test/mask
 Loading model from /zhome/29/b/146867/Article_OCT/Article_OCT_Diabetic_neuropathy/models/best_unet_model.pth...
 Dataset initialized with 11 valid pairs. Augment=False
-Calculating metrics and visualizing 3 samples...
+Calculating metrics and visualizing 5 samples...
 
 --- EVALUATION RESULTS ---
 Total Samples: 11
@@ -12,15 +14,15 @@ Saved visualization to test_predictions.png
 
 ------------------------------------------------------------
 Sender: LSF System <lsfadmin@hpc.dtu.dk>
-Subject: Job 28037317: <test> in cluster <dcc> Done
+Subject: Job 28037388: <test> in cluster <dcc> Done
 
-Job <test> was submitted from host <n-62-20-1> by user <s194504> in cluster <dcc> at Fri Mar 13 12:02:20 2026
-Job was executed on host(s) <4*n-62-20-3>, in queue <gpuv100>, as user <s194504> in cluster <dcc> at Fri Mar 13 12:02:22 2026
+Job <test> was submitted from host <hpclogin1> by user <s194504> in cluster <dcc> at Fri Mar 13 12:32:46 2026
+Job was executed on host(s) <4*n-62-20-3>, in queue <gpuv100>, as user <s194504> in cluster <dcc> at Fri Mar 13 12:32:46 2026
 </zhome/29/b/146867> was used as the home directory.
 </zhome/29/b/146867/Article_OCT/Article_OCT_Diabetic_neuropathy/src> was used as the working directory.
-Started at Fri Mar 13 12:02:22 2026
-Terminated at Fri Mar 13 12:02:32 2026
-Results reported at Fri Mar 13 12:02:32 2026
+Started at Fri Mar 13 12:32:46 2026
+Terminated at Fri Mar 13 12:32:59 2026
+Results reported at Fri Mar 13 12:32:59 2026
 
 Your job looked like:
 
@@ -59,16 +61,16 @@ Successfully completed.
 
 Resource usage summary:
 
-    CPU time :                                   7.66 sec.
-    Max Memory :                                 -
-    Average Memory :                             -
+    CPU time :                                   12.00 sec.
+    Max Memory :                                 20 MB
+    Average Memory :                             14.00 MB
     Total Requested Memory :                     65536.00 MB
-    Delta Memory :                               -
+    Delta Memory :                               65516.00 MB
     Max Swap :                                   -
-    Max Processes :                              -
-    Max Threads :                                -
-    Run time :                                   80 sec.
-    Turnaround time :                            12 sec.
+    Max Processes :                              2
+    Max Threads :                                2
+    Run time :                                   76 sec.
+    Turnaround time :                            13 sec.
 
 The output (if any) is above this job summary.
 
@@ -76,5 +78,5 @@ The output (if any) is above this job summary.
 
 PS:
 
-Read file <test_28037317.err> for stderr output of this job.
+Read file <test_28037388.err> for stderr output of this job.
 

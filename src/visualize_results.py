@@ -7,7 +7,7 @@ from pathlib import Path
 from dataloaders import OCT_SKIN
 from functions import dice_coefficient
 
-def visualize_predictions(model_path, data_dir, device='cuda', num_samples=3):
+def visualize_predictions(model_path, data_dir, device='cuda', num_samples=5):
     # --- 1. SET UP PATHS ---
     images_dir = Path(data_dir) / 'train' / 'images' # Check train if test is empty or vice versa
     masks_dir = Path(data_dir) / 'train' / 'mask'
@@ -17,6 +17,9 @@ def visualize_predictions(model_path, data_dir, device='cuda', num_samples=3):
         images_dir = Path(data_dir) / 'test' / 'images'
         masks_dir = Path(data_dir) / 'test' / 'mask'
     
+    print(f"Loading images from: {images_dir}")
+    print(f"Loading masks from: {masks_dir}")
+
     # --- 2. LOAD MODEL ---
     print(f"Loading model from {model_path}...")
     model = smp.Unet(
@@ -71,6 +74,7 @@ def visualize_predictions(model_path, data_dir, device='cuda', num_samples=3):
     with torch.no_grad():
         for i, idx in enumerate(indices):
             image, mask = dataset[idx]
+            image_path = dataset.data_pairs[idx]['image'].name
             image_in = image.unsqueeze(0).to(device)
             
             # Forward pass
@@ -92,16 +96,21 @@ def visualize_predictions(model_path, data_dir, device='cuda', num_samples=3):
             # Handle cases where num_samples=1 (axes is not 2D)
             curr_axes = axes[i] if num_samples > 1 else axes
             
+            # Subplot 1: Input Image
             curr_axes[0].imshow(display_img, cmap='gray')
-            curr_axes[0].set_title(f"Sample {idx} - Input OCT")
+            curr_axes[0].set_title(f"Sample {idx}\n{image_path}")
             curr_axes[0].axis('off')
             
-            curr_axes[1].imshow(display_mask, cmap='jet')
-            curr_axes[1].set_title(f"Ground Truth Mask")
+            # Subplot 2: Overlay Ground Truth
+            curr_axes[1].imshow(display_img, cmap='gray')
+            curr_axes[1].imshow(display_mask, cmap='jet', alpha=0.4) # Overlay with transparency
+            curr_axes[1].set_title(f"Ground Truth Overlay")
             curr_axes[1].axis('off')
             
-            curr_axes[2].imshow(pred_binary, cmap='jet')
-            curr_axes[2].set_title(f"Prediction (Dice: {dice:.4f})")
+            # Subplot 3: Overlay Prediction
+            curr_axes[2].imshow(display_img, cmap='gray')
+            curr_axes[2].imshow(pred_binary, cmap='jet', alpha=0.4) # Overlay with transparency
+            curr_axes[2].set_title(f"Prediction Overlay\nDice: {dice:.4f}")
             curr_axes[2].axis('off')
 
     plt.tight_layout()
