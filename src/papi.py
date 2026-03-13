@@ -64,6 +64,7 @@ def test_model_on_sample_image(model, image, device, target_size=(512, 512), plo
         img_for_model = img_norm
 
     img_resized = cv2.resize(img_for_model, target_size, interpolation=cv2.INTER_LINEAR)
+    img_resized = (img_resized - 0.5) / 0.5
     img_tensor = torch.from_numpy(img_resized).unsqueeze(0).unsqueeze(0).to(device)
     
     with torch.no_grad():
@@ -80,7 +81,8 @@ def test_model_on_sample_image(model, image, device, target_size=(512, 512), plo
         overlay = np.stack([img_for_model]*3, axis=-1)
         overlay[resized_mask > 0] = [1, 0, 0]
         plt.subplot(1, 2, 2); plt.imshow(overlay); plt.title('Mask Overlay'); plt.axis('off')
-        plt.show()
+        plt.savefig("segmentation_test.png")
+        plt.close()
 
     return resized_mask
 
@@ -106,7 +108,9 @@ def remove_epidermis_from_image(image, p_mask, plot=False):
         plt.imshow(image, cmap='gray')
         plt.plot(cols, upper_line, 'r', label='Surface')
         plt.plot(cols, lower_line, 'b', label='DEJ')
-        plt.legend(); plt.show()
+        plt.legend()
+        plt.savefig("epidermis_removal_lines.png")
+        plt.close()
 
     return img_modified, upper_coords, lower_coords
 
@@ -151,7 +155,8 @@ def identify_and_plot_dots(image, min_size=50, intensity_threshold=50, plot=True
         plt.imshow(image, cmap='gray')
         plt.imshow(circular_objects > 0, cmap='hot', alpha=0.5)
         plt.title(f'Detected Loops: {len(dot_coords)}')
-        plt.show()
+        plt.savefig("detected_capillary_loops.png")
+        plt.close()
 
     return dot_coords, circular_objects > 0
 
@@ -161,29 +166,30 @@ if __name__ == "__main__":
     print(f"Using device: {device}")
     MODEL_PATH = "/home/madsl/article/Article_OCT_Diabetic_neuropathy/models/best_unet_model.pth"
     
-    # Path to separate OCT and OCTA files as per the notebook logic
-    # _S.dcm = Structural (OCT), _D.dcm = Flow (OCTA)
-    OCT_PATH = "/home/madsl/article/Article_OCT_Diabetic_neuropathy/data/dicom/JJ_Right Hallux_L1030_S2678__24_05_2021.dcm"
-    OCTA_PATH = "/home/madsl/article/Article_OCT_Diabetic_neuropathy/data/dicom/JJ_Right Hallux_L1030_S2678__24_05_2021.dcm" # Usually different file, e.g. ..._D.dcm
+    # Path to RGB DICOM containing both Structural (Grayscale) and Flow (Red Overlay) data
+    DICOM_PATH = "/home/madsl/article/Article_OCT_Diabetic_neuropathy/data/dicom/RS_Right Hallux_L1076_S3070__26_05_2021.dcm"
     
     model = load_pytorch_model(MODEL_PATH, device)
 
-    # 1. Import separate datasets
-    OCT_data, spacing, _ = import_dicom(OCT_PATH)
-    OCTA_data, _, _ = import_dicom(OCTA_PATH)
+    # 1. Import dataset
+    dicom_data, spacing, _ = import_dicom(DICOM_PATH)
     x_sp, y_sp, z_sp = spacing
     
     # Initialize the 3D volume for the papillary dermis slab
-    # Using the shape of the OCTA data
-    papillary_dermis_3d = np.zeros_like(OCTA_data, dtype=np.float32)
+    # Ensure it's a 3D float array (N, H, W) even if input is RGB
+    if len(dicom_data.shape) == 4: # (N, H, W, 3)
+        pd_shape = (dicom_data.shape[0], dicom_data.shape[1], dicom_data.shape[2])
+    else:
+        pd_shape = dicom_data.shape
+        
+    papillary_dermis_3d = np.zeros(pd_shape, dtype=np.float32)
     tortuosities = []
     
-    print(f"Processing {OCT_data.shape[0]} slices...")
-    for i in range(OCT_data.shape[0]):
-        # B-scan from structural OCT for segmenting the epidermis
-        oct_slice = OCT_data[i]
-        # B-scan from OCTA for extracting flow
-        octa_slice = OCTA_data[i]
+    print(f"Processing {dicom_data.shape[0]} slices...")
+    for i in range(dicom_data.shape[0]):
+        # B-scan contains both structural and flow data in RGB channels
+        oct_slice = dicom_data[i]
+        octa_slice = dicom_data[i]
         
         # Segment epidermis on OCT slice
         p_mask = test_model_on_sample_image(model, oct_slice, device)
@@ -191,8 +197,8 @@ if __name__ == "__main__":
         _, _, lower_line = remove_epidermis_from_image(oct_slice, p_mask)
         
         # Define slab from -5 to +20 pixels relative to DOJ
-        new_lower = shift_line_coordinates(lower_line, 20, oct_slice.shape[0])
-        new_upper = shift_line_coordinates(lower_line, -5, oct_slice.shape[0])
+        new_lower = shift_line_coordinates(lower_line, 15, oct_slice.shape[0])
+        new_upper = shift_line_coordinates(lower_line, 0, oct_slice.shape[0])
         p_dermi_mask = create_mask_between_lines(oct_slice.shape[0], oct_slice.shape[1], new_upper, new_lower)
         
         # Extract Flow from OCTA data
@@ -215,7 +221,8 @@ if __name__ == "__main__":
     plt.figure(figsize=(10, 10))
     plt.imshow(mip_final, cmap='gray')
     plt.title("Papillary Dermis EN-FACE MIP (Aligned with Notebook)")
-    plt.show()
+    plt.savefig("papillary_dermis_mip.png")
+    plt.close()
     print(f"Mean DEJ Tortuosity: {np.mean(tortuosities):.4f}")
     
     dots, _ = identify_and_plot_dots(mip_final, min_size=30, intensity_threshold=75, circularity_threshold=0.45)
