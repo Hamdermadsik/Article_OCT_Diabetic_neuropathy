@@ -28,6 +28,11 @@ results/figures/*.png
 results/figures/*.pdf
 results/tables/*.csv
 
+#ignore outputs folder 
+outputs/
+
+#ignore models 
+models/
 # Raw and processed data — add specific files to track if needed
 data/
 data/raw/*
