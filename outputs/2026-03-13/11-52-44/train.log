@@ -1,0 +1,183 @@
+[2026-03-13 11:52:45,039][__main__][INFO] - Configuration:
+{'hyperparameters': {'num_epochs': 150, 'learning_rate': 0.0001, 'batch_size': 4, 'num_workers': 4, 'val_split_ratio': 0.2, 'seed': 42, 'dice_alpha': 0.15, 'noise_sigma': 0}}
+[2026-03-13 11:52:45,067][__main__][INFO] - Using device: cuda
+[2026-03-13 11:52:45,067][__main__][INFO] - Saving outputs to: /zhome/29/b/146867/Article_OCT/Article_OCT_Diabetic_neuropathy
+[2026-03-13 11:52:45,080][__main__][INFO] - Data mapping: total=52 | Train=42 | Validation=10
+[2026-03-13 11:52:45,627][__main__][INFO] - Starting training...
+[2026-03-13 11:52:47,826][__main__][INFO] - Epoch 1/150 | Train Loss: 0.8582 | Val Loss: 0.8327 | Val DICE: 0.1907
+[2026-03-13 11:52:47,826][__main__][INFO] -    --> New best model! DICE improved 0.0000 -> 0.1907. Saving.
+[2026-03-13 11:52:49,188][__main__][INFO] - Epoch 2/150 | Train Loss: 0.7577 | Val Loss: 0.7847 | Val DICE: 0.2880
+[2026-03-13 11:52:49,189][__main__][INFO] -    --> New best model! DICE improved 0.1907 -> 0.2880. Saving.
+[2026-03-13 11:52:50,617][__main__][INFO] - Epoch 3/150 | Train Loss: 0.7094 | Val Loss: 0.7244 | Val DICE: 0.4250
+[2026-03-13 11:52:50,617][__main__][INFO] -    --> New best model! DICE improved 0.2880 -> 0.4250. Saving.
+[2026-03-13 11:52:52,031][__main__][INFO] - Epoch 4/150 | Train Loss: 0.6878 | Val Loss: 0.6871 | Val DICE: 0.5274
+[2026-03-13 11:52:52,032][__main__][INFO] -    --> New best model! DICE improved 0.4250 -> 0.5274. Saving.
+[2026-03-13 11:52:53,423][__main__][INFO] - Epoch 5/150 | Train Loss: 0.6571 | Val Loss: 0.6686 | Val DICE: 0.6211
+[2026-03-13 11:52:53,424][__main__][INFO] -    --> New best model! DICE improved 0.5274 -> 0.6211. Saving.
+[2026-03-13 11:52:54,809][__main__][INFO] - Epoch 6/150 | Train Loss: 0.6397 | Val Loss: 0.6336 | Val DICE: 0.7209
+[2026-03-13 11:52:54,809][__main__][INFO] -    --> New best model! DICE improved 0.6211 -> 0.7209. Saving.
+[2026-03-13 11:52:56,236][__main__][INFO] - Epoch 7/150 | Train Loss: 0.6216 | Val Loss: 0.6193 | Val DICE: 0.8048
+[2026-03-13 11:52:56,236][__main__][INFO] -    --> New best model! DICE improved 0.7209 -> 0.8048. Saving.
+[2026-03-13 11:52:57,623][__main__][INFO] - Epoch 8/150 | Train Loss: 0.6032 | Val Loss: 0.6039 | Val DICE: 0.7798
+[2026-03-13 11:52:58,831][__main__][INFO] - Epoch 9/150 | Train Loss: 0.5922 | Val Loss: 0.5909 | Val DICE: 0.7956
+[2026-03-13 11:53:00,034][__main__][INFO] - Epoch 10/150 | Train Loss: 0.5760 | Val Loss: 0.5791 | Val DICE: 0.7939
+[2026-03-13 11:53:01,242][__main__][INFO] - Epoch 11/150 | Train Loss: 0.5624 | Val Loss: 0.5641 | Val DICE: 0.8039
+[2026-03-13 11:53:02,414][__main__][INFO] - Epoch 12/150 | Train Loss: 0.5453 | Val Loss: 0.5572 | Val DICE: 0.7745
+[2026-03-13 11:53:03,608][__main__][INFO] - Epoch 13/150 | Train Loss: 0.5399 | Val Loss: 0.5561 | Val DICE: 0.7489
+[2026-03-13 11:53:04,809][__main__][INFO] - Epoch 14/150 | Train Loss: 0.5235 | Val Loss: 0.5353 | Val DICE: 0.7916
+[2026-03-13 11:53:06,016][__main__][INFO] - Epoch 15/150 | Train Loss: 0.5085 | Val Loss: 0.5171 | Val DICE: 0.8174
+[2026-03-13 11:53:06,016][__main__][INFO] -    --> New best model! DICE improved 0.8048 -> 0.8174. Saving.
+[2026-03-13 11:53:07,422][__main__][INFO] - Epoch 16/150 | Train Loss: 0.4979 | Val Loss: 0.5058 | Val DICE: 0.8116
+[2026-03-13 11:53:08,656][__main__][INFO] - Epoch 17/150 | Train Loss: 0.4951 | Val Loss: 0.4978 | Val DICE: 0.8080
+[2026-03-13 11:53:09,855][__main__][INFO] - Epoch 18/150 | Train Loss: 0.4730 | Val Loss: 0.4865 | Val DICE: 0.8137
+[2026-03-13 11:53:11,058][__main__][INFO] - Epoch 19/150 | Train Loss: 0.4625 | Val Loss: 0.4731 | Val DICE: 0.8668
+[2026-03-13 11:53:11,058][__main__][INFO] -    --> New best model! DICE improved 0.8174 -> 0.8668. Saving.
+[2026-03-13 11:53:12,438][__main__][INFO] - Epoch 20/150 | Train Loss: 0.4531 | Val Loss: 0.4581 | Val DICE: 0.8552
+[2026-03-13 11:53:13,657][__main__][INFO] - Epoch 21/150 | Train Loss: 0.4384 | Val Loss: 0.4477 | Val DICE: 0.8767
+[2026-03-13 11:53:13,657][__main__][INFO] -    --> New best model! DICE improved 0.8668 -> 0.8767. Saving.
+[2026-03-13 11:53:15,059][__main__][INFO] - Epoch 22/150 | Train Loss: 0.4237 | Val Loss: 0.4437 | Val DICE: 0.8270
+[2026-03-13 11:53:16,228][__main__][INFO] - Epoch 23/150 | Train Loss: 0.4192 | Val Loss: 0.4290 | Val DICE: 0.8616
+[2026-03-13 11:53:17,422][__main__][INFO] - Epoch 24/150 | Train Loss: 0.4080 | Val Loss: 0.4210 | Val DICE: 0.8459
+[2026-03-13 11:53:18,605][__main__][INFO] - Epoch 25/150 | Train Loss: 0.4004 | Val Loss: 0.4086 | Val DICE: 0.8739
+[2026-03-13 11:53:19,773][__main__][INFO] - Epoch 26/150 | Train Loss: 0.3855 | Val Loss: 0.4127 | Val DICE: 0.8729
+[2026-03-13 11:53:20,936][__main__][INFO] - Epoch 27/150 | Train Loss: 0.3730 | Val Loss: 0.3863 | Val DICE: 0.8794
+[2026-03-13 11:53:20,936][__main__][INFO] -    --> New best model! DICE improved 0.8767 -> 0.8794. Saving.
+[2026-03-13 11:53:22,257][__main__][INFO] - Epoch 28/150 | Train Loss: 0.3663 | Val Loss: 0.3746 | Val DICE: 0.8801
+[2026-03-13 11:53:22,258][__main__][INFO] -    --> New best model! DICE improved 0.8794 -> 0.8801. Saving.
+[2026-03-13 11:53:23,575][__main__][INFO] - Epoch 29/150 | Train Loss: 0.3570 | Val Loss: 0.3710 | Val DICE: 0.8600
+[2026-03-13 11:53:24,723][__main__][INFO] - Epoch 30/150 | Train Loss: 0.3502 | Val Loss: 0.3630 | Val DICE: 0.8619
+[2026-03-13 11:53:25,875][__main__][INFO] - Epoch 31/150 | Train Loss: 0.3421 | Val Loss: 0.3540 | Val DICE: 0.8608
+[2026-03-13 11:53:26,985][__main__][INFO] - Epoch 32/150 | Train Loss: 0.3319 | Val Loss: 0.3449 | Val DICE: 0.8910
+[2026-03-13 11:53:26,985][__main__][INFO] -    --> New best model! DICE improved 0.8801 -> 0.8910. Saving.
+[2026-03-13 11:53:28,356][__main__][INFO] - Epoch 33/150 | Train Loss: 0.3297 | Val Loss: 0.3426 | Val DICE: 0.8785
+[2026-03-13 11:53:29,478][__main__][INFO] - Epoch 34/150 | Train Loss: 0.3224 | Val Loss: 0.3354 | Val DICE: 0.8521
+[2026-03-13 11:53:30,611][__main__][INFO] - Epoch 35/150 | Train Loss: 0.3104 | Val Loss: 0.3332 | Val DICE: 0.8482
+[2026-03-13 11:53:31,760][__main__][INFO] - Epoch 36/150 | Train Loss: 0.2980 | Val Loss: 0.3132 | Val DICE: 0.8878
+[2026-03-13 11:53:32,947][__main__][INFO] - Epoch 37/150 | Train Loss: 0.2885 | Val Loss: 0.3110 | Val DICE: 0.8671
+[2026-03-13 11:53:34,096][__main__][INFO] - Epoch 38/150 | Train Loss: 0.2834 | Val Loss: 0.2950 | Val DICE: 0.8847
+[2026-03-13 11:53:35,267][__main__][INFO] - Epoch 39/150 | Train Loss: 0.2738 | Val Loss: 0.2973 | Val DICE: 0.8870
+[2026-03-13 11:53:36,438][__main__][INFO] - Epoch 40/150 | Train Loss: 0.2710 | Val Loss: 0.2874 | Val DICE: 0.8868
+[2026-03-13 11:53:37,622][__main__][INFO] - Epoch 41/150 | Train Loss: 0.2630 | Val Loss: 0.2774 | Val DICE: 0.8876
+[2026-03-13 11:53:38,834][__main__][INFO] - Epoch 42/150 | Train Loss: 0.2598 | Val Loss: 0.2821 | Val DICE: 0.8855
+[2026-03-13 11:53:40,026][__main__][INFO] - Epoch 43/150 | Train Loss: 0.2527 | Val Loss: 0.2705 | Val DICE: 0.8890
+[2026-03-13 11:53:41,188][__main__][INFO] - Epoch 44/150 | Train Loss: 0.2438 | Val Loss: 0.2664 | Val DICE: 0.8805
+[2026-03-13 11:53:42,361][__main__][INFO] - Epoch 45/150 | Train Loss: 0.2408 | Val Loss: 0.2593 | Val DICE: 0.8923
+[2026-03-13 11:53:42,361][__main__][INFO] -    --> New best model! DICE improved 0.8910 -> 0.8923. Saving.
+[2026-03-13 11:53:43,732][__main__][INFO] - Epoch 46/150 | Train Loss: 0.2349 | Val Loss: 0.2599 | Val DICE: 0.8885
+[2026-03-13 11:53:44,881][__main__][INFO] - Epoch 47/150 | Train Loss: 0.2366 | Val Loss: 0.2656 | Val DICE: 0.8874
+[2026-03-13 11:53:46,068][__main__][INFO] - Epoch 48/150 | Train Loss: 0.2236 | Val Loss: 0.2467 | Val DICE: 0.8892
+[2026-03-13 11:53:47,245][__main__][INFO] - Epoch 49/150 | Train Loss: 0.2189 | Val Loss: 0.2455 | Val DICE: 0.8819
+[2026-03-13 11:53:48,431][__main__][INFO] - Epoch 50/150 | Train Loss: 0.2207 | Val Loss: 0.2400 | Val DICE: 0.8881
+[2026-03-13 11:53:49,626][__main__][INFO] - Epoch 51/150 | Train Loss: 0.2087 | Val Loss: 0.2417 | Val DICE: 0.8898
+[2026-03-13 11:53:50,818][__main__][INFO] - Epoch 52/150 | Train Loss: 0.2067 | Val Loss: 0.2281 | Val DICE: 0.8944
+[2026-03-13 11:53:50,818][__main__][INFO] -    --> New best model! DICE improved 0.8923 -> 0.8944. Saving.
+[2026-03-13 11:53:52,217][__main__][INFO] - Epoch 53/150 | Train Loss: 0.2020 | Val Loss: 0.2263 | Val DICE: 0.8979
+[2026-03-13 11:53:52,218][__main__][INFO] -    --> New best model! DICE improved 0.8944 -> 0.8979. Saving.
+[2026-03-13 11:53:53,623][__main__][INFO] - Epoch 54/150 | Train Loss: 0.1951 | Val Loss: 0.2142 | Val DICE: 0.8971
+[2026-03-13 11:53:54,781][__main__][INFO] - Epoch 55/150 | Train Loss: 0.1959 | Val Loss: 0.2161 | Val DICE: 0.8969
+[2026-03-13 11:53:55,971][__main__][INFO] - Epoch 56/150 | Train Loss: 0.1877 | Val Loss: 0.2109 | Val DICE: 0.8927
+[2026-03-13 11:53:57,144][__main__][INFO] - Epoch 57/150 | Train Loss: 0.1891 | Val Loss: 0.2135 | Val DICE: 0.8933
+[2026-03-13 11:53:58,307][__main__][INFO] - Epoch 58/150 | Train Loss: 0.1852 | Val Loss: 0.2102 | Val DICE: 0.9000
+[2026-03-13 11:53:58,307][__main__][INFO] -    --> New best model! DICE improved 0.8979 -> 0.9000. Saving.
+[2026-03-13 11:53:59,673][__main__][INFO] - Epoch 59/150 | Train Loss: 0.1758 | Val Loss: 0.2098 | Val DICE: 0.8997
+[2026-03-13 11:54:00,842][__main__][INFO] - Epoch 60/150 | Train Loss: 0.1760 | Val Loss: 0.2058 | Val DICE: 0.8949
+[2026-03-13 11:54:02,061][__main__][INFO] - Epoch 61/150 | Train Loss: 0.1705 | Val Loss: 0.2038 | Val DICE: 0.8992
+[2026-03-13 11:54:03,253][__main__][INFO] - Epoch 62/150 | Train Loss: 0.1736 | Val Loss: 0.1958 | Val DICE: 0.8994
+[2026-03-13 11:54:04,433][__main__][INFO] - Epoch 63/150 | Train Loss: 0.1645 | Val Loss: 0.1976 | Val DICE: 0.8993
+[2026-03-13 11:54:05,607][__main__][INFO] - Epoch 64/150 | Train Loss: 0.1667 | Val Loss: 0.1943 | Val DICE: 0.9037
+[2026-03-13 11:54:05,608][__main__][INFO] -    --> New best model! DICE improved 0.9000 -> 0.9037. Saving.
+[2026-03-13 11:54:07,003][__main__][INFO] - Epoch 65/150 | Train Loss: 0.1630 | Val Loss: 0.1926 | Val DICE: 0.9011
+[2026-03-13 11:54:08,191][__main__][INFO] - Epoch 66/150 | Train Loss: 0.1651 | Val Loss: 0.1945 | Val DICE: 0.9007
+[2026-03-13 11:54:09,352][__main__][INFO] - Epoch 67/150 | Train Loss: 0.1589 | Val Loss: 0.1855 | Val DICE: 0.8979
+[2026-03-13 11:54:10,540][__main__][INFO] - Epoch 68/150 | Train Loss: 0.1611 | Val Loss: 0.1890 | Val DICE: 0.9047
+[2026-03-13 11:54:10,540][__main__][INFO] -    --> New best model! DICE improved 0.9037 -> 0.9047. Saving.
+[2026-03-13 11:54:11,932][__main__][INFO] - Epoch 69/150 | Train Loss: 0.1520 | Val Loss: 0.1853 | Val DICE: 0.9039
+[2026-03-13 11:54:13,081][__main__][INFO] - Epoch 70/150 | Train Loss: 0.1557 | Val Loss: 0.1871 | Val DICE: 0.9030
+[2026-03-13 11:54:14,239][__main__][INFO] - Epoch 71/150 | Train Loss: 0.1484 | Val Loss: 0.1916 | Val DICE: 0.8990
+[2026-03-13 11:54:15,446][__main__][INFO] - Epoch 72/150 | Train Loss: 0.1551 | Val Loss: 0.1854 | Val DICE: 0.8979
+[2026-03-13 11:54:16,692][__main__][INFO] - Epoch 73/150 | Train Loss: 0.1493 | Val Loss: 0.1838 | Val DICE: 0.8909
+[2026-03-13 11:54:17,852][__main__][INFO] - Epoch 74/150 | Train Loss: 0.1537 | Val Loss: 0.1786 | Val DICE: 0.9019
+[2026-03-13 11:54:19,045][__main__][INFO] - Epoch 75/150 | Train Loss: 0.1495 | Val Loss: 0.1810 | Val DICE: 0.8989
+[2026-03-13 11:54:20,278][__main__][INFO] - Epoch 76/150 | Train Loss: 0.1408 | Val Loss: 0.1764 | Val DICE: 0.9057
+[2026-03-13 11:54:20,278][__main__][INFO] -    --> New best model! DICE improved 0.9047 -> 0.9057. Saving.
+[2026-03-13 11:54:21,670][__main__][INFO] - Epoch 77/150 | Train Loss: 0.1414 | Val Loss: 0.1739 | Val DICE: 0.9013
+[2026-03-13 11:54:22,857][__main__][INFO] - Epoch 78/150 | Train Loss: 0.1385 | Val Loss: 0.1737 | Val DICE: 0.9029
+[2026-03-13 11:54:24,048][__main__][INFO] - Epoch 79/150 | Train Loss: 0.1444 | Val Loss: 0.1765 | Val DICE: 0.9029
+[2026-03-13 11:54:25,239][__main__][INFO] - Epoch 80/150 | Train Loss: 0.1377 | Val Loss: 0.1772 | Val DICE: 0.8993
+[2026-03-13 11:54:26,408][__main__][INFO] - Epoch 81/150 | Train Loss: 0.1379 | Val Loss: 0.1761 | Val DICE: 0.9015
+[2026-03-13 11:54:27,587][__main__][INFO] - Epoch 82/150 | Train Loss: 0.1366 | Val Loss: 0.1713 | Val DICE: 0.8990
+[2026-03-13 11:54:28,760][__main__][INFO] - Epoch 83/150 | Train Loss: 0.1315 | Val Loss: 0.1697 | Val DICE: 0.9055
+[2026-03-13 11:54:29,982][__main__][INFO] - Epoch 84/150 | Train Loss: 0.1317 | Val Loss: 0.1686 | Val DICE: 0.9021
+[2026-03-13 11:54:31,167][__main__][INFO] - Epoch 85/150 | Train Loss: 0.1311 | Val Loss: 0.1692 | Val DICE: 0.9013
+[2026-03-13 11:54:32,318][__main__][INFO] - Epoch 86/150 | Train Loss: 0.1303 | Val Loss: 0.1699 | Val DICE: 0.9040
+[2026-03-13 11:54:33,501][__main__][INFO] - Epoch 87/150 | Train Loss: 0.1322 | Val Loss: 0.1660 | Val DICE: 0.9014
+[2026-03-13 11:54:34,667][__main__][INFO] - Epoch 88/150 | Train Loss: 0.1283 | Val Loss: 0.1699 | Val DICE: 0.9027
+[2026-03-13 11:54:35,854][__main__][INFO] - Epoch 89/150 | Train Loss: 0.1220 | Val Loss: 0.1652 | Val DICE: 0.9066
+[2026-03-13 11:54:35,854][__main__][INFO] -    --> New best model! DICE improved 0.9057 -> 0.9066. Saving.
+[2026-03-13 11:54:37,256][__main__][INFO] - Epoch 90/150 | Train Loss: 0.1262 | Val Loss: 0.1670 | Val DICE: 0.9035
+[2026-03-13 11:54:38,430][__main__][INFO] - Epoch 91/150 | Train Loss: 0.1236 | Val Loss: 0.1618 | Val DICE: 0.9063
+[2026-03-13 11:54:39,636][__main__][INFO] - Epoch 92/150 | Train Loss: 0.1226 | Val Loss: 0.1609 | Val DICE: 0.9050
+[2026-03-13 11:54:40,801][__main__][INFO] - Epoch 93/150 | Train Loss: 0.1217 | Val Loss: 0.1619 | Val DICE: 0.9063
+[2026-03-13 11:54:41,986][__main__][INFO] - Epoch 94/150 | Train Loss: 0.1228 | Val Loss: 0.1652 | Val DICE: 0.9062
+[2026-03-13 11:54:43,156][__main__][INFO] - Epoch 95/150 | Train Loss: 0.1239 | Val Loss: 0.1580 | Val DICE: 0.9068
+[2026-03-13 11:54:43,157][__main__][INFO] -    --> New best model! DICE improved 0.9066 -> 0.9068. Saving.
+[2026-03-13 11:54:44,538][__main__][INFO] - Epoch 96/150 | Train Loss: 0.1185 | Val Loss: 0.1581 | Val DICE: 0.9085
+[2026-03-13 11:54:44,539][__main__][INFO] -    --> New best model! DICE improved 0.9068 -> 0.9085. Saving.
+[2026-03-13 11:54:45,923][__main__][INFO] - Epoch 97/150 | Train Loss: 0.1181 | Val Loss: 0.1610 | Val DICE: 0.9019
+[2026-03-13 11:54:47,102][__main__][INFO] - Epoch 98/150 | Train Loss: 0.1183 | Val Loss: 0.1612 | Val DICE: 0.9051
+[2026-03-13 11:54:48,294][__main__][INFO] - Epoch 99/150 | Train Loss: 0.1177 | Val Loss: 0.1575 | Val DICE: 0.9071
+[2026-03-13 11:54:49,471][__main__][INFO] - Epoch 100/150 | Train Loss: 0.1171 | Val Loss: 0.1620 | Val DICE: 0.9051
+[2026-03-13 11:54:50,630][__main__][INFO] - Epoch 101/150 | Train Loss: 0.1246 | Val Loss: 0.1564 | Val DICE: 0.9073
+[2026-03-13 11:54:51,798][__main__][INFO] - Epoch 102/150 | Train Loss: 0.1161 | Val Loss: 0.1542 | Val DICE: 0.9052
+[2026-03-13 11:54:53,005][__main__][INFO] - Epoch 103/150 | Train Loss: 0.1170 | Val Loss: 0.1594 | Val DICE: 0.9066
+[2026-03-13 11:54:54,176][__main__][INFO] - Epoch 104/150 | Train Loss: 0.1126 | Val Loss: 0.1531 | Val DICE: 0.9065
+[2026-03-13 11:54:55,365][__main__][INFO] - Epoch 105/150 | Train Loss: 0.1167 | Val Loss: 0.1565 | Val DICE: 0.9072
+[2026-03-13 11:54:56,587][__main__][INFO] - Epoch 106/150 | Train Loss: 0.1120 | Val Loss: 0.1525 | Val DICE: 0.9076
+[2026-03-13 11:54:57,763][__main__][INFO] - Epoch 107/150 | Train Loss: 0.1090 | Val Loss: 0.1529 | Val DICE: 0.9092
+[2026-03-13 11:54:57,763][__main__][INFO] -    --> New best model! DICE improved 0.9085 -> 0.9092. Saving.
+[2026-03-13 11:54:59,126][__main__][INFO] - Epoch 108/150 | Train Loss: 0.1129 | Val Loss: 0.1549 | Val DICE: 0.9060
+[2026-03-13 11:55:00,329][__main__][INFO] - Epoch 109/150 | Train Loss: 0.1127 | Val Loss: 0.1554 | Val DICE: 0.9067
+[2026-03-13 11:55:01,521][__main__][INFO] - Epoch 110/150 | Train Loss: 0.1143 | Val Loss: 0.1546 | Val DICE: 0.9078
+[2026-03-13 11:55:02,704][__main__][INFO] - Epoch 111/150 | Train Loss: 0.1144 | Val Loss: 0.1539 | Val DICE: 0.9063
+[2026-03-13 11:55:03,927][__main__][INFO] - Epoch 112/150 | Train Loss: 0.1153 | Val Loss: 0.1557 | Val DICE: 0.9047
+[2026-03-13 11:55:05,119][__main__][INFO] - Epoch 113/150 | Train Loss: 0.1088 | Val Loss: 0.1542 | Val DICE: 0.9067
+[2026-03-13 11:55:06,318][__main__][INFO] - Epoch 114/150 | Train Loss: 0.1076 | Val Loss: 0.1530 | Val DICE: 0.9054
+[2026-03-13 11:55:07,513][__main__][INFO] - Epoch 115/150 | Train Loss: 0.1081 | Val Loss: 0.1536 | Val DICE: 0.9069
+[2026-03-13 11:55:08,697][__main__][INFO] - Epoch 116/150 | Train Loss: 0.1138 | Val Loss: 0.1550 | Val DICE: 0.9051
+[2026-03-13 11:55:09,879][__main__][INFO] - Epoch 117/150 | Train Loss: 0.1103 | Val Loss: 0.1521 | Val DICE: 0.9078
+[2026-03-13 11:55:11,078][__main__][INFO] - Epoch 118/150 | Train Loss: 0.1055 | Val Loss: 0.1511 | Val DICE: 0.9066
+[2026-03-13 11:55:12,265][__main__][INFO] - Epoch 119/150 | Train Loss: 0.1055 | Val Loss: 0.1524 | Val DICE: 0.9077
+[2026-03-13 11:55:13,453][__main__][INFO] - Epoch 120/150 | Train Loss: 0.1082 | Val Loss: 0.1521 | Val DICE: 0.9074
+[2026-03-13 11:55:14,649][__main__][INFO] - Epoch 121/150 | Train Loss: 0.1083 | Val Loss: 0.1512 | Val DICE: 0.9079
+[2026-03-13 11:55:15,862][__main__][INFO] - Epoch 122/150 | Train Loss: 0.1085 | Val Loss: 0.1517 | Val DICE: 0.9077
+[2026-03-13 11:55:17,058][__main__][INFO] - Epoch 123/150 | Train Loss: 0.1121 | Val Loss: 0.1516 | Val DICE: 0.9064
+[2026-03-13 11:55:18,256][__main__][INFO] - Epoch 124/150 | Train Loss: 0.1074 | Val Loss: 0.1523 | Val DICE: 0.9069
+[2026-03-13 11:55:19,441][__main__][INFO] - Epoch 125/150 | Train Loss: 0.1081 | Val Loss: 0.1540 | Val DICE: 0.9068
+[2026-03-13 11:55:20,628][__main__][INFO] - Epoch 126/150 | Train Loss: 0.1129 | Val Loss: 0.1543 | Val DICE: 0.9042
+[2026-03-13 11:55:21,826][__main__][INFO] - Epoch 127/150 | Train Loss: 0.1062 | Val Loss: 0.1534 | Val DICE: 0.9072
+[2026-03-13 11:55:23,055][__main__][INFO] - Epoch 128/150 | Train Loss: 0.1084 | Val Loss: 0.1518 | Val DICE: 0.9073
+[2026-03-13 11:55:24,221][__main__][INFO] - Epoch 129/150 | Train Loss: 0.1037 | Val Loss: 0.1507 | Val DICE: 0.9076
+[2026-03-13 11:55:25,402][__main__][INFO] - Epoch 130/150 | Train Loss: 0.1048 | Val Loss: 0.1509 | Val DICE: 0.9074
+[2026-03-13 11:55:26,559][__main__][INFO] - Epoch 131/150 | Train Loss: 0.1050 | Val Loss: 0.1517 | Val DICE: 0.9079
+[2026-03-13 11:55:27,740][__main__][INFO] - Epoch 132/150 | Train Loss: 0.1071 | Val Loss: 0.1523 | Val DICE: 0.9075
+[2026-03-13 11:55:28,901][__main__][INFO] - Epoch 133/150 | Train Loss: 0.1063 | Val Loss: 0.1518 | Val DICE: 0.9068
+[2026-03-13 11:55:30,102][__main__][INFO] - Epoch 134/150 | Train Loss: 0.1075 | Val Loss: 0.1512 | Val DICE: 0.9069
+[2026-03-13 11:55:31,298][__main__][INFO] - Epoch 135/150 | Train Loss: 0.1046 | Val Loss: 0.1507 | Val DICE: 0.9071
+[2026-03-13 11:55:32,487][__main__][INFO] - Epoch 136/150 | Train Loss: 0.1059 | Val Loss: 0.1499 | Val DICE: 0.9070
+[2026-03-13 11:55:33,694][__main__][INFO] - Epoch 137/150 | Train Loss: 0.1049 | Val Loss: 0.1499 | Val DICE: 0.9076
+[2026-03-13 11:55:34,856][__main__][INFO] - Epoch 138/150 | Train Loss: 0.1113 | Val Loss: 0.1510 | Val DICE: 0.9073
+[2026-03-13 11:55:36,018][__main__][INFO] - Epoch 139/150 | Train Loss: 0.1040 | Val Loss: 0.1503 | Val DICE: 0.9079
+[2026-03-13 11:55:37,194][__main__][INFO] - Epoch 140/150 | Train Loss: 0.1092 | Val Loss: 0.1504 | Val DICE: 0.9079
+[2026-03-13 11:55:38,390][__main__][INFO] - Epoch 141/150 | Train Loss: 0.1056 | Val Loss: 0.1503 | Val DICE: 0.9077
+[2026-03-13 11:55:39,596][__main__][INFO] - Epoch 142/150 | Train Loss: 0.1018 | Val Loss: 0.1497 | Val DICE: 0.9080
+[2026-03-13 11:55:40,810][__main__][INFO] - Epoch 143/150 | Train Loss: 0.1024 | Val Loss: 0.1504 | Val DICE: 0.9074
+[2026-03-13 11:55:42,002][__main__][INFO] - Epoch 144/150 | Train Loss: 0.1076 | Val Loss: 0.1507 | Val DICE: 0.9076
+[2026-03-13 11:55:43,207][__main__][INFO] - Epoch 145/150 | Train Loss: 0.1064 | Val Loss: 0.1512 | Val DICE: 0.9075
+[2026-03-13 11:55:44,376][__main__][INFO] - Epoch 146/150 | Train Loss: 0.1030 | Val Loss: 0.1505 | Val DICE: 0.9079
+[2026-03-13 11:55:45,546][__main__][INFO] - Epoch 147/150 | Train Loss: 0.1025 | Val Loss: 0.1499 | Val DICE: 0.9083
+[2026-03-13 11:55:46,755][__main__][INFO] - Epoch 148/150 | Train Loss: 0.1041 | Val Loss: 0.1503 | Val DICE: 0.9073
+[2026-03-13 11:55:47,927][__main__][INFO] - Epoch 149/150 | Train Loss: 0.1032 | Val Loss: 0.1500 | Val DICE: 0.9072
+[2026-03-13 11:55:49,116][__main__][INFO] - Epoch 150/150 | Train Loss: 0.1050 | Val Loss: 0.1507 | Val DICE: 0.9073
+[2026-03-13 11:55:49,118][__main__][WARNING] - Test data not found at /zhome/29/b/146867/Article_OCT/Article_OCT_Diabetic_neuropathy/data/test/images. Skipping test evaluation.
+[2026-03-13 11:55:49,118][__main__][INFO] - Training finished. Model saved to /zhome/29/b/146867/Article_OCT/Article_OCT_Diabetic_neuropathy/models/best_unet_model.pth
+[2026-03-13 11:55:49,118][__main__][INFO] - Training Complete in 183.49 seconds. Best DICE: 0.9092

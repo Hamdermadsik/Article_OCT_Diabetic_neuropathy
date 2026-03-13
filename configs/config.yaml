@@ -1,0 +1,9 @@
+hyperparameters:
+  num_epochs: 150
+  learning_rate: 1e-4
+  batch_size: 4
+  num_workers: 4
+  val_split_ratio: 0.2
+  seed: 42
+  dice_alpha: 0.15
+  noise_sigma: 0 # Standard deviation of Gaussian noise (0-255)

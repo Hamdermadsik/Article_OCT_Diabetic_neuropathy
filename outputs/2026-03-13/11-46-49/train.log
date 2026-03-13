@@ -1,0 +1,4 @@
+[2026-03-13 11:46:49,641][__main__][INFO] - Configuration:
+{'hyperparameters': {'num_epochs': 150, 'learning_rate': 0.0001, 'batch_size': 4, 'num_workers': 4, 'val_split_ratio': 0.2, 'seed': 42, 'dice_alpha': 0.15, 'n_samples': 20, 'noise_sigma': 0}}
+[2026-03-13 11:46:49,698][__main__][INFO] - Using device: cuda
+[2026-03-13 11:46:49,698][__main__][INFO] - Saving outputs to: /zhome/29/b/146867/Article_OCT/Article_OCT_Diabetic_neuropathy
