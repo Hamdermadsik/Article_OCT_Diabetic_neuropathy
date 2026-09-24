@@ -3,7 +3,26 @@ hyperparameters:
   learning_rate: 1e-4
   batch_size: 4
   num_workers: 4
-  val_split_ratio: 0.2
+  val_split_ratio: 0.2   # fraction of *patients* held out, not frames
   seed: 42
   dice_alpha: 0.15
-  noise_sigma: 0 # Standard deviation of Gaussian noise (0-255)
+  pos_weight: 9.0
+
+data:
+  # Model input size as [height, width]. Single source of truth: the dataloader
+  # and training script both read it from here.
+  target_size: [512, 512]
+  # Where to read frames from. "manifest" uses data/manifest/frames.csv (which
+  # carries patient identity, so the split can be patient-grouped);
+  # "directories" falls back to the legacy data/train + data/test layout.
+  source: manifest
+  manifest_dir: data/manifest
+  train_images: data/train/images
+  train_masks: data/train/mask
+  test_images: data/test/images
+  test_masks: data/test/mask
+  # Checkpoints are written to the run's own Hydra output directory. Promotion
+  # to models/best_unet_model.pth is opt-in so a throwaway run cannot replace
+  # the project's model, and replacing an existing one takes a second flag.
+  promote_checkpoint: false
+  overwrite_promoted_checkpoint: false

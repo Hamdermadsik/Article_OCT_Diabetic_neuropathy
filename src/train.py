@@ -1,199 +1,190 @@
 import logging
+
 log = logging.getLogger(__name__)
 
 import time
 from pathlib import Path
+
 import hydra
-from omegaconf import DictConfig
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader, Subset
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig
 from torch.optim.lr_scheduler import CosineAnnealingLR
-import segmentation_models_pytorch as smp
+from torch.utils.data import DataLoader, Subset
 
-from dataloaders import OCT_SKIN
-from functions import train_one_epoch, validate_one_epoch, CombinedLoss
+from dataloaders import OCT_SKIN, frames_from_directories, load_manifest_frames
+from functions import CombinedLoss, train_one_epoch, validate_one_epoch
+from model_utils import build_unet
+from splits import assert_no_patient_overlap, describe_split, split_frames
+
+
+def load_frames(cfg: DictConfig, orig_cwd: Path):
+    """Training frames, from the manifest when available."""
+    data_cfg = cfg.data
+    if data_cfg.source == "manifest":
+        manifest_dir = orig_cwd / data_cfg.manifest_dir
+        frames = load_manifest_frames(manifest_dir)
+        log.info("Loaded %d annotated frames from manifest %s", len(frames), manifest_dir)
+        return frames
+
+    frames = frames_from_directories(
+        orig_cwd / data_cfg.train_images, orig_cwd / data_cfg.train_masks
+    )
+    log.warning(
+        "Using directory-based frames (%d found). These carry no patient identity, so the "
+        "train/val split cannot be patient-grouped.",
+        len(frames),
+    )
+    return frames
+
 
 @hydra.main(config_path="../configs", config_name="config", version_base="1.2")
 def main(cfg: DictConfig):
-    # Log configuration (Hydra allows overriding these via CLI, e.g., hyperparameters.learning_rate=0.01)
     log.info(f"Configuration:\n{cfg}")
-    
-    # Extract params from config
     hp = cfg.hyperparameters
-    
-    # --- 1. DEVICE ALLOCATION ---
+    target_size = tuple(cfg.data.target_size)
+
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info(f"Using device: {DEVICE}")
 
-    # --- 2. PATHS ---
-    # Hydra changes the working directory to the output directory of the run.
-    # We use hydra.utils.get_original_cwd() to find the data.
     orig_cwd = Path(hydra.utils.get_original_cwd())
-    DATA_DIR = orig_cwd / 'data' / 'train'
-    images_path = DATA_DIR / 'images'
-    masks_path = DATA_DIR / 'mask'
-    
-    OUTPUT_DIR = Path.cwd() # Current working dir is the hydra output dir
+    # Each run writes into its own timestamped Hydra directory. Writing to a
+    # shared models/ path would silently destroy the previous run's checkpoint
+    # -- Hydra does not change the working directory under version_base 1.2, so
+    # Path.cwd() here is the repo root, not a per-run directory.
+    OUTPUT_DIR = Path(HydraConfig.get().runtime.output_dir)
     log.info(f"Saving outputs to: {OUTPUT_DIR}")
 
-    # --- 3. DATA LOADERS ---
-    TARGET_SIZE = (512, 512)
-    
-    # Create two separate dataset instances to control augmentation independently
-    train_base_dataset = OCT_SKIN(
-        images_dir=images_path, 
-        masks_dir=masks_path,
-        target_size=TARGET_SIZE,
-        augment=True
-    )
-
-    val_base_dataset = OCT_SKIN(
-        images_dir=images_path, 
-        masks_dir=masks_path,
-        target_size=TARGET_SIZE,
-        augment=False
-    )
-
-    # Calculate Split Sizes
-    total_samples = len(train_base_dataset)
-    if total_samples == 0:
-        log.error(f"No valid image/mask pairs found in {images_path}! Check file extensions (.jpeg) and naming.")
+    # --- DATA ---
+    frames = load_frames(cfg, orig_cwd)
+    if len(frames) == 0:
+        log.error("No annotated frames found. Nothing to train on.")
         return
 
-    val_samples = int(hp.val_split_ratio * total_samples)
-    train_samples = total_samples - val_samples
-    log.info(f"Data mapping: total={total_samples} | Train={train_samples} | Validation={val_samples}")
+    train_indices, val_indices = split_frames(frames, hp.val_split_ratio, hp.seed)
+    assert_no_patient_overlap(frames, train_indices, val_indices)
+    log.info("Split: %s", describe_split(frames, train_indices, val_indices))
 
-    # Create fixed internal indices and shuffle once
-    torch.manual_seed(hp.seed)
-    shuffled_indices = torch.randperm(total_samples).tolist()
-    
-    train_indices = shuffled_indices[val_samples:]
-    val_indices = shuffled_indices[:val_samples]
+    if not val_indices:
+        log.warning("Validation set is empty; best-checkpoint selection is disabled.")
 
-    train_subset = Subset(train_base_dataset, train_indices)
-    val_subset = Subset(val_base_dataset, val_indices)
+    train_dataset = OCT_SKIN(frames, target_size=target_size, augment=True)
+    val_dataset = OCT_SKIN(frames, target_size=target_size, augment=False)
 
     train_dataloader = DataLoader(
-        train_subset,
+        Subset(train_dataset, train_indices),
         batch_size=hp.batch_size,
         shuffle=True,
         num_workers=hp.num_workers,
-        pin_memory=True
+        pin_memory=True,
     )
-
     val_dataloader = DataLoader(
-        val_subset,
+        Subset(val_dataset, val_indices),
         batch_size=hp.batch_size,
         shuffle=False,
         num_workers=hp.num_workers,
-        pin_memory=True
+        pin_memory=True,
     )
 
-    # --- 4. MODEL SETUP ---
-    POS_WEIGHT = torch.tensor([9.0]).to(DEVICE) 
-    
-    model = smp.Unet(
-        encoder_name="resnet18",
-        encoder_weights="imagenet",
-        in_channels=1,
-        classes=1,
-        activation=None
-    ).to(DEVICE)
+    # --- MODEL ---
+    POS_WEIGHT = torch.tensor([float(hp.pos_weight)]).to(DEVICE)
+    model = build_unet(encoder_weights="imagenet").to(DEVICE)
 
     CRITERION = CombinedLoss(alpha=hp.dice_alpha, pos_weight=POS_WEIGHT)
     OPTIMIZER = optim.AdamW(model.parameters(), lr=hp.learning_rate)
+    SCHEDULER = CosineAnnealingLR(optimizer=OPTIMIZER, T_max=hp.num_epochs, eta_min=1e-7)
 
-    SCHEDULER = CosineAnnealingLR(
-        optimizer=OPTIMIZER,
-        T_max=hp.num_epochs,
-        eta_min=1e-7
-    )
-
-    # --- 5. TRAINING LOOP ---
-    # Ensure models directory exists
     (OUTPUT_DIR / "models").mkdir(parents=True, exist_ok=True)
-
     BEST_MODEL_PATH = OUTPUT_DIR / "models" / "best_unet_model.pth"
     HISTORY_PATH = OUTPUT_DIR / "models" / "training_history.pt"
 
-    history = {'train_loss': [], 'val_loss': [], 'val_dice': [], 'epoch': [], 'test_dice': None}
+    history = {"train_loss": [], "val_loss": [], "val_dice": [], "epoch": [], "test_dice": None}
     best_val_dice = 0.0
 
     log.info("Starting training...")
     start_time = time.time()
 
     for epoch in range(1, hp.num_epochs + 1):
-        # 1. Training Phase
         train_loss = train_one_epoch(train_dataloader, model, CRITERION, OPTIMIZER, DEVICE)
-        
-        # 2. Validation Phase
-        val_loss, val_dice = validate_one_epoch(val_dataloader, model, CRITERION, DEVICE)
 
-        # 3. Epoch Summary
-        log.info(f"Epoch {epoch}/{hp.num_epochs} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val DICE: {val_dice:.4f}")
+        if val_indices:
+            val_loss, val_dice = validate_one_epoch(val_dataloader, model, CRITERION, DEVICE)
+        else:
+            val_loss, val_dice = float("nan"), 0.0
 
+        log.info(
+            f"Epoch {epoch}/{hp.num_epochs} | Train Loss: {train_loss:.4f} | "
+            f"Val Loss: {val_loss:.4f} | Val DICE: {val_dice:.4f}"
+        )
         SCHEDULER.step()
 
-        # 4. Save History (keep only val_dice for plotting if no test set)
-        history['train_loss'].append(train_loss)
-        history['val_loss'].append(val_loss)
-        history['val_dice'].append(val_dice)
-        history['epoch'].append(epoch)
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["val_dice"].append(val_dice)
+        history["epoch"].append(epoch)
 
-        # 5. Checkpoint
         if val_dice > best_val_dice:
-            log.info(f"   --> New best model! DICE improved {best_val_dice:.4f} -> {val_dice:.4f}. Saving.")
+            log.info(f"   --> New best model! DICE {best_val_dice:.4f} -> {val_dice:.4f}. Saving.")
             best_val_dice = val_dice
             torch.save(model.state_dict(), BEST_MODEL_PATH)
-            # We defer saving history until end or here, usually we want to save history too
             torch.save(history, HISTORY_PATH)
 
-    # --- 6. TEST EVALUATION (After training completes) ---
-    TEST_IMAGES_DIR = orig_cwd / 'data' / 'test' / 'images'
-    TEST_MASKS_DIR = orig_cwd / 'data' / 'test' / 'mask'
-    
-    # Check if directory exists and has files
-    test_files = list(TEST_IMAGES_DIR.glob("*.jpeg")) if TEST_IMAGES_DIR.exists() else []
-    
-    if TEST_IMAGES_DIR.exists() and TEST_MASKS_DIR.exists() and len(test_files) > 0:
-        log.info(f"Found {len(test_files)} images at {TEST_IMAGES_DIR}. Loading best model for evaluation...")
-        
-        # Load Best Model
+    if not BEST_MODEL_PATH.exists():
+        torch.save(model.state_dict(), BEST_MODEL_PATH)
+        torch.save(history, HISTORY_PATH)
+
+    # --- TEST EVALUATION ---
+    test_frames = frames_from_directories(
+        orig_cwd / cfg.data.test_images, orig_cwd / cfg.data.test_masks
+    )
+    if len(test_frames) > 0:
+        log.info(f"Found {len(test_frames)} test frames. Loading best model for evaluation...")
         model.load_state_dict(torch.load(BEST_MODEL_PATH))
         model.eval()
-        
-        # Create Test Loader (No Augmentation, No Noise)
-        test_dataset = OCT_SKIN(
-            images_dir=TEST_IMAGES_DIR, 
-            masks_dir=TEST_MASKS_DIR,
-            target_size=TARGET_SIZE,
-            augment=False,
-            n_samples=10000, # Load all test images
-            noise_sigma=0 # Test data is clean? Or should we add noise? Usually clean.
-        )
-        
+
+        test_dataset = OCT_SKIN(test_frames, target_size=target_size, augment=False)
         test_dataloader = DataLoader(
             test_dataset,
             batch_size=hp.batch_size,
             shuffle=False,
-            num_workers=hp.num_workers
+            num_workers=hp.num_workers,
         )
-        
-        # Run Evaluation
         _, test_dice = validate_one_epoch(test_dataloader, model, CRITERION, DEVICE)
         log.info(f"Test Set Evaluation -> DICE: {test_dice:.4f}")
-        
-        # Update and Save History
-        history['test_dice'] = test_dice
+
+        history["test_dice"] = test_dice
         torch.save(history, HISTORY_PATH)
     else:
-        log.warning(f"Test data not found at {TEST_IMAGES_DIR}. Skipping test evaluation.")
+        log.warning(
+            "No test frames found at %s. Skipping test evaluation.",
+            orig_cwd / cfg.data.test_images,
+        )
 
     log.info(f"Training finished. Model saved to {BEST_MODEL_PATH}")
-    total_duration = time.time() - start_time
-    log.info(f"Training Complete in {total_duration:.2f} seconds. Best DICE: {best_val_dice:.4f}")
+    log.info(
+        f"Training Complete in {time.time() - start_time:.2f} seconds. Best DICE: {best_val_dice:.4f}"
+    )
+
+    promote_path = orig_cwd / "models" / "best_unet_model.pth"
+    if cfg.data.get("promote_checkpoint", False):
+        if promote_path.exists() and not cfg.data.get("overwrite_promoted_checkpoint", False):
+            log.warning(
+                "Not promoting: %s already exists. Re-run with "
+                "data.overwrite_promoted_checkpoint=true to replace it.",
+                promote_path,
+            )
+        else:
+            promote_path.parent.mkdir(parents=True, exist_ok=True)
+            promote_path.write_bytes(BEST_MODEL_PATH.read_bytes())
+            log.info("Promoted checkpoint to %s", promote_path)
+    else:
+        log.info(
+            "Checkpoint left in the run directory. To make it the project model, copy it to "
+            "%s or re-run with data.promote_checkpoint=true",
+            promote_path,
+        )
+
 
 if __name__ == "__main__":
     main()

@@ -1,11 +1,10 @@
 import torch
-import segmentation_models_pytorch as smp
 import matplotlib.pyplot as plt
 import numpy as np
-import cv2
 from pathlib import Path
-from dataloaders import OCT_SKIN
+from dataloaders import OCT_SKIN, frames_from_directories
 from functions import dice_coefficient
+from model_utils import DEFAULT_TARGET_SIZE, default_model_path, load_pytorch_model, project_root
 
 def visualize_predictions(model_path, data_dir, device='cuda', num_samples=5):
     # --- 1. SET UP PATHS ---
@@ -22,23 +21,13 @@ def visualize_predictions(model_path, data_dir, device='cuda', num_samples=5):
 
     # --- 2. LOAD MODEL ---
     print(f"Loading model from {model_path}...")
-    model = smp.Unet(
-        encoder_name="resnet18",
-        encoder_weights=None, # Loading local weights
-        in_channels=1,
-        classes=1,
-        activation=None
-    ).to(device)
-    
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.eval()
-    
+    model = load_pytorch_model(model_path, device)
+
     # --- 3. PREPARE DATASET ---
     dataset = OCT_SKIN(
-        images_dir=images_dir,
-        masks_dir=masks_dir,
-        target_size=(512, 512),
-        augment=False
+        frames_from_directories(images_dir, masks_dir),
+        target_size=DEFAULT_TARGET_SIZE,
+        augment=False,
     )
     
     if len(dataset) == 0:
@@ -74,7 +63,7 @@ def visualize_predictions(model_path, data_dir, device='cuda', num_samples=5):
     with torch.no_grad():
         for i, idx in enumerate(indices):
             image, mask = dataset[idx]
-            image_path = dataset.data_pairs[idx]['image'].name
+            image_path = Path(dataset.frames.iloc[idx]['png_path']).name
             image_in = image.unsqueeze(0).to(device)
             
             # Forward pass
@@ -120,9 +109,9 @@ def visualize_predictions(model_path, data_dir, device='cuda', num_samples=5):
 
 if __name__ == "__main__":
     # Settings
-    PROJECT_ROOT = "/zhome/29/b/146867/Article_OCT/Article_OCT_Diabetic_neuropathy"
-    MODEL_PATH = f"{PROJECT_ROOT}/models/best_unet_model.pth"
-    DATA_PATH = f"{PROJECT_ROOT}/data"
+    PROJECT_ROOT = project_root()
+    MODEL_PATH = default_model_path()
+    DATA_PATH = PROJECT_ROOT / "data"
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     visualize_predictions(MODEL_PATH, DATA_PATH, device=device)

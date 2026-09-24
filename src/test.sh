@@ -10,8 +10,10 @@
 #BSUB -e test_%J.err    # Standard error
 
 # --- ENVIRONMENT SETUP ---
-# Go to your project root (one level up from src/)
-cd /zhome/29/b/146867/Article_OCT/Article_OCT_Diabetic_neuropathy || exit
+# Project root: the directory containing this script's parent (src/..).
+# Override with OCT_PROJECT_ROOT when the checkout lives elsewhere.
+PROJECT_ROOT="${OCT_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+cd "$PROJECT_ROOT" || exit
 
 # Activate your virtual environment
 

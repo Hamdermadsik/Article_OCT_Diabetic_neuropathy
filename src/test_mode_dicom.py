@@ -1,28 +1,19 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
-import segmentation_models_pytorch as smp
 import SimpleITK as sitk
 import cv2
 from pathlib import Path
 
-def load_pytorch_model(model_path, device):
-    """Loads the smp.Unet model."""
-    model = smp.Unet(
-        encoder_name="resnet18",
-        encoder_weights=None,
-        in_channels=1,
-        classes=1
-    )
-    checkpoint = torch.load(model_path, map_location=device)
-    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
-    else:
-        model.load_state_dict(checkpoint)
-        
-    model.to(device)
-    model.eval()
-    return model
+from image_utils import letterbox_resize, letterbox_unresize
+from model_utils import (
+    DEFAULT_TARGET_SIZE,
+    NORMALIZE_MEAN,
+    NORMALIZE_STD,
+    default_model_path,
+    load_pytorch_model,
+    project_root,
+)
 
 def import_dicom_volume(path):
     """Loads a DICOM volume into a numpy array."""
@@ -32,9 +23,8 @@ def import_dicom_volume(path):
     dicom_image = reader.Execute()
     return sitk.GetArrayFromImage(dicom_image)
 
-def predict_mask(model, image, device, target_size=(512, 512)):
+def predict_mask(model, image, device, target_size=DEFAULT_TARGET_SIZE):
     """Runs inference with proper normalization mapping to [-1, 1]."""
-    orig_shape = image.shape
     
     # Scale to [0, 1]
     max_val = 65535.0 if image.dtype == np.uint16 else 255.0
@@ -47,8 +37,10 @@ def predict_mask(model, image, device, target_size=(512, 512)):
         img_for_model = img_norm
 
     # Resize and scale to [-1, 1] for model
-    img_resized = cv2.resize(img_for_model, target_size, interpolation=cv2.INTER_LINEAR)
-    img_resized = (img_resized - 0.5) / 0.5  
+    img_resized, letterbox = letterbox_resize(
+        img_for_model, target_size, interpolation=cv2.INTER_LINEAR
+    )
+    img_resized = (img_resized - NORMALIZE_MEAN) / NORMALIZE_STD
     
     img_tensor = torch.from_numpy(img_resized).unsqueeze(0).unsqueeze(0).to(device)
     
@@ -59,7 +51,7 @@ def predict_mask(model, image, device, target_size=(512, 512)):
     
     # Resize output mask back to native size
     pred_mask_np = pred_mask.squeeze().cpu().numpy()
-    resized_mask = cv2.resize(pred_mask_np, (orig_shape[1], orig_shape[0]), interpolation=cv2.INTER_NEAREST)
+    resized_mask = letterbox_unresize(pred_mask_np, letterbox, interpolation=cv2.INTER_NEAREST)
     
     return img_for_model, resized_mask
 
@@ -68,8 +60,8 @@ if __name__ == "__main__":
     print(f"Using device: {device}")
     
     # Project paths
-    PROJECT_ROOT = Path("/home/madsl/article/Article_OCT_Diabetic_neuropathy")
-    MODEL_PATH = PROJECT_ROOT / "models" / "best_unet_model.pth"
+    PROJECT_ROOT = project_root()
+    MODEL_PATH = default_model_path()
     DICOM_PATH = PROJECT_ROOT / "data" / "dicom" / "JJ_Right Hallux_L1030_S2678__24_05_2021.dcm" 
     
     print("\nLoading Model...")
