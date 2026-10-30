@@ -118,7 +118,15 @@ def calculate_tortuosity(coords):
     D = np.linalg.norm(coords[-1] - coords[0])
     return L / D if D != 0 else 1.0
 
-def identify_and_plot_dots(image, min_size=50, intensity_threshold=50, plot=True, circularity_threshold=0.7):
+def identify_and_plot_dots(
+    image,
+    min_size=50,
+    intensity_threshold=50,
+    plot=True,
+    circularity_threshold=0.7,
+    out_path="detected_capillary_loops.png",
+    title=None,
+):
     image_norm = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     binary_image = (image_norm > intensity_threshold).astype(np.uint8)
     cleaned_image = morphology.remove_small_objects(binary_image.astype(bool), min_size=min_size)
@@ -138,76 +146,104 @@ def identify_and_plot_dots(image, min_size=50, intensity_threshold=50, plot=True
         plt.figure(figsize=(8, 8))
         plt.imshow(image, cmap='gray')
         plt.imshow(circular_objects > 0, cmap='hot', alpha=0.5)
-        plt.title(f'Detected Loops: {len(dot_coords)}')
-        plt.savefig("detected_capillary_loops.png")
+        plt.title(title or f'Detected Loops: {len(dot_coords)}')
+        plt.savefig(out_path)
         plt.close()
 
     return dot_coords, circular_objects > 0
 
-if __name__ == "__main__":
-    
+
+# Depth window below the predicted DEJ, in pixels, that holds the papillary loops.
+SLAB_TOP_PX = 0
+SLAB_BOTTOM_PX = 15
+EN_FACE_SIZE = (1355, 1355)
+DEFAULT_DICOM = Path("data") / "dicom" / "RS_Right Hallux_L1076_S3070__26_05_2021.dcm"
+
+
+def extract_flow(volume_slice):
+    """Flow signal: in the RGB renderings, flow is the red tint over grey."""
+    if volume_slice.ndim == 3:
+        red = volume_slice[:, :, 0].astype(float)
+        green = volume_slice[:, :, 1].astype(float)
+        return np.clip(red - green, 0, None)
+    return volume_slice.astype(float)
+
+
+def papillary_dermis_mip(volume, model, device, slab=(SLAB_TOP_PX, SLAB_BOTTOM_PX)):
+    """En-face maximum-intensity projection of flow in the papillary dermis slab.
+
+    Returns the MIP (slices x width), the DEJ depth per slice and column (-1
+    where the model found no skin layer), and the DEJ tortuosity per slice.
+    """
+    n_slices, height, width = volume.shape[:3]
+    mip = np.zeros((n_slices, width), dtype=np.float32)
+    dej = np.full((n_slices, width), -1, dtype=int)
+    tortuosities = []
+
+    for i in range(n_slices):
+        p_mask = test_model_on_sample_image(model, volume[i], device)
+        _, _, lower_line = remove_epidermis_from_image(volume[i], p_mask)
+        found = p_mask.astype(bool).any(axis=0)
+
+        slab_top = shift_line_coordinates(lower_line, slab[0], height)
+        slab_bottom = shift_line_coordinates(lower_line, slab[1], height)
+        slab_mask = create_mask_between_lines(height, width, slab_top, slab_bottom)
+        # A column with no detected skin layer has no DEJ. Without this, its
+        # slab would be taken from the top rows of the image, above the skin.
+        slab_mask[:, ~found] = 0
+
+        mip[i] = np.where(slab_mask == 1, extract_flow(volume[i]), 0).max(axis=0)
+        dej[i, found] = lower_line[found, 0]
+        tortuosities.append(calculate_tortuosity(lower_line[found]))
+
+    return mip, dej, tortuosities
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Papillary dermis en-face MIP and capillary loop count.")
+    parser.add_argument(
+        "dicoms", nargs="*", type=Path, help=f"RGB OCTA DICOM volumes (default: {DEFAULT_DICOM})"
+    )
+    parser.add_argument("--out-dir", type=Path, default=Path.cwd())
+    args = parser.parse_args()
+    dicoms = args.dicoms or [project_root() / DEFAULT_DICOM]
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-    MODEL_PATH = default_model_path()
+    model = load_pytorch_model(default_model_path(), device)
 
-    # Path to RGB DICOM containing both Structural (Grayscale) and Flow (Red Overlay) data
-    DICOM_PATH = project_root() / "data" / "dicom" / "RS_Right Hallux_L1076_S3070__26_05_2021.dcm"
-    
-    model = load_pytorch_model(MODEL_PATH, device)
+    for path in dicoms:
+        volume, _, _ = import_dicom(path)
+        print(f"{path.name}: processing {volume.shape[0]} slices...")
+        mip, dej, tortuosities = papillary_dermis_mip(volume, model, device)
 
-    # 1. Import dataset
-    dicom_data, spacing, _ = import_dicom(DICOM_PATH)
-    x_sp, y_sp, z_sp = spacing
-    
-    # Initialize the 3D volume for the papillary dermis slab
-    # Ensure it's a 3D float array (N, H, W) even if input is RGB
-    if len(dicom_data.shape) == 4: # (N, H, W, 3)
-        pd_shape = (dicom_data.shape[0], dicom_data.shape[1], dicom_data.shape[2])
-    else:
-        pd_shape = dicom_data.shape
-        
-    papillary_dermis_3d = np.zeros(pd_shape, dtype=np.float32)
-    tortuosities = []
-    
-    print(f"Processing {dicom_data.shape[0]} slices...")
-    for i in range(dicom_data.shape[0]):
-        # B-scan contains both structural and flow data in RGB channels
-        oct_slice = dicom_data[i]
-        octa_slice = dicom_data[i]
-        
-        # Segment epidermis on OCT slice
-        p_mask = test_model_on_sample_image(model, oct_slice, device)
-        # Find DEJ (lower line)
-        _, _, lower_line = remove_epidermis_from_image(oct_slice, p_mask)
-        
-        # Define slab from -5 to +20 pixels relative to DOJ
-        new_lower = shift_line_coordinates(lower_line, 15, oct_slice.shape[0])
-        new_upper = shift_line_coordinates(lower_line, 0, oct_slice.shape[0])
-        p_dermi_mask = create_mask_between_lines(oct_slice.shape[0], oct_slice.shape[1], new_upper, new_lower)
-        
-        # Extract Flow from OCTA data
-        # If the file is RGB, the 'red stuff' is the OCTA signal.
-        if len(octa_slice.shape) == 3:
-            # Extract red signal by subtracting Green from Red
-            r = octa_slice[:, :, 0].astype(float)
-            g = octa_slice[:, :, 1].astype(float)
-            flow_signal = np.clip(r - g, 0, None)
-        else:
-            flow_signal = octa_slice
+        stem = path.stem
+        np.save(args.out_dir / f"{stem}_mip.npy", mip)
+        np.save(args.out_dir / f"{stem}_dej.npy", dej)
 
-        papillary_dermis_3d[i] = np.where(p_dermi_mask == 1, flow_signal, 0)
-        tortuosities.append(calculate_tortuosity(lower_line))
+        mip_final = resize(mip, EN_FACE_SIZE, anti_aliasing=True, order=1)
+        plt.figure(figsize=(10, 10))
+        plt.imshow(mip_final, cmap='gray')
+        plt.title(f"Papillary dermis en-face MIP\n{stem}")
+        plt.savefig(args.out_dir / f"{stem}_papillary_dermis_mip.png")
+        plt.close()
 
-    # EN-FACE MIP: Projected along Axis 1 (Depth)
-    mip = np.max(papillary_dermis_3d, axis=1) 
-    mip_final = resize(mip, (1355, 1355), anti_aliasing=True, order=1)
-    
-    plt.figure(figsize=(10, 10))
-    plt.imshow(mip_final, cmap='gray')
-    plt.title("Papillary Dermis EN-FACE MIP (Aligned with Notebook)")
-    plt.savefig("papillary_dermis_mip.png")
-    plt.close()
-    print(f"Mean DEJ Tortuosity: {np.mean(tortuosities):.4f}")
-    
-    dots, _ = identify_and_plot_dots(mip_final, min_size=30, intensity_threshold=75, circularity_threshold=0.45)
-    print(f"Capillary Loops Found: {len(dots)}")
+        dots, _ = identify_and_plot_dots(
+            mip_final,
+            min_size=30,
+            intensity_threshold=75,
+            circularity_threshold=0.45,
+            out_path=args.out_dir / f"{stem}_detected_capillary_loops.png",
+        )
+        no_dej = (dej < 0).mean()
+        print(
+            f"  loops={len(dots)}  mean DEJ tortuosity={np.mean(tortuosities):.4f}  "
+            f"columns without a detected DEJ={no_dej:.1%}"
+        )
+
+
+if __name__ == "__main__":
+    main()
