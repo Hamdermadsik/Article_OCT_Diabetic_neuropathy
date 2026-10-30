@@ -67,6 +67,7 @@ def match_scans(
         resolution = {field: None for field in RESOLVED_FIELDS}
         resolution["match_method"] = "unmatched"
         resolution["match_detail"] = ""
+        resolution["phase_ambiguous"] = False
 
         for name, fields in MATCH_STRATEGIES:
             key = _key_of(file_row, fields)
@@ -104,6 +105,7 @@ def match_scans(
                 # first.
                 for field in ("phase", "condition", "excel_column"):
                     resolution[field] = None
+                resolution["phase_ambiguous"] = True
                 details.append(
                     "phase ambiguous: scan log lists it under "
                     + " and ".join(sorted(str(column) for _, _, column in listings))
@@ -121,27 +123,34 @@ def match_scans(
 
 
 def mark_duplicates(scans: pd.DataFrame) -> pd.DataFrame:
-    """Flag repeat acquisitions of the same scan via ``is_duplicate_of``.
+    """Flag repeat copies of the same acquisition via ``is_duplicate_of``.
 
-    Windows "name (1).dcm" copies are the common case. The canonical row is the
-    one without a copy suffix, tie-broken by larger file size so a truncated
-    partial copy never wins.
+    Exactly one copy of each acquisition stays canonical. Preference goes to a
+    copy without a Windows "(1)" suffix, then one filed in its own session's
+    folder (some October scans also sit, misfiled, in the May folder), then
+    the larger file so a truncated partial copy never wins.
     """
-    scans = scans.copy()
+    scans = scans.copy().reset_index(drop=True)
     scans["is_duplicate_of"] = None
     if scans.empty:
         return scans
 
+    misfiled = (
+        scans["cohort"] != scans["folder_cohort"]
+        if "folder_cohort" in scans.columns
+        else pd.Series(False, index=scans.index)
+    )
+    ranked = scans.assign(_misfiled=misfiled.astype(int))
+
     key_fields = ["cohort", "initials", "date", "scan_number", "protocol_area"]
-    for _, group in scans.groupby(key_fields, dropna=False):
+    for _, group in ranked.groupby(key_fields, dropna=False):
         if len(group) < 2:
             continue
         ordered = group.sort_values(
-            ["copy_index", "file_size"], ascending=[True, False]
+            ["copy_index", "_misfiled", "file_size"], ascending=[True, True, False]
         )
         canonical_id = ordered.iloc[0]["scan_id"]
-        for scan_id in ordered.iloc[1:]["scan_id"]:
-            scans.loc[scans["scan_id"] == scan_id, "is_duplicate_of"] = canonical_id
+        scans.loc[ordered.index[1:], "is_duplicate_of"] = canonical_id
     return scans
 
 
@@ -182,9 +191,10 @@ def find_phase_overlaps(long_df: pd.DataFrame) -> pd.DataFrame:
 
     When the two listings are on different body sites, each file's own body
     site says which one it is, so the overlap is informational. On the same
-    body site nothing can tell them apart and the cell needs correcting.
+    body site nothing can tell them apart -- the lab records cannot settle it
+    either -- so those scans are excluded.
     """
-    columns = ["cohort", "participant_id", "excel_column", "raw_value", "issue", "needs_fix"]
+    columns = ["cohort", "participant_id", "excel_column", "raw_value", "issue", "action"]
     if long_df.empty:
         return pd.DataFrame(columns=columns)
 
@@ -210,12 +220,12 @@ def find_phase_overlaps(long_df: pd.DataFrame) -> pd.DataFrame:
         if same_site:
             issue = (
                 f"scans {scans}{visit} are listed under {' and '.join(listings)} on the same "
-                "body site - their phase is ambiguous and they are excluded from selection"
+                "body site, so their phase cannot be determined"
             )
         else:
             issue = (
                 f"scans {scans}{visit} are listed under {' and '.join(listings)}, on different "
-                "body sites - each file's body site decides, so no fix is required"
+                "body sites - each file's body site decides which applies"
             )
         rows.append(
             {
@@ -224,7 +234,7 @@ def find_phase_overlaps(long_df: pd.DataFrame) -> pd.DataFrame:
                 "excel_column": " + ".join(listings),
                 "raw_value": scans,
                 "issue": issue,
-                "needs_fix": bool(same_site),
+                "action": "excluded" if same_site else "resolved_by_body_site",
             }
         )
     return pd.DataFrame(rows, columns=columns)

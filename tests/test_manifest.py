@@ -214,6 +214,7 @@ class TestMatching:
         row = result.iloc[0]
         assert row["participant_id"] == "HP-01-AB"
         assert row["phase"] is None
+        assert row["phase_ambiguous"]
         assert "phase ambiguous" in row["match_detail"]
 
     def test_windows_copies_are_marked_as_duplicates(self):
@@ -423,6 +424,50 @@ class TestSessionAssignment:
         assert session_for_date(pd.NaT, "october_2020") == "october_2020"
 
 
+class TestDuplicates:
+    def _copy(self, scan_id, folder, **overrides):
+        row = {
+            "scan_id": scan_id,
+            "cohort": "october_2020",
+            "folder_cohort": folder,
+            "initials": "TL",
+            "date": pd.Timestamp("2020-10-13"),
+            "scan_number": 520,
+            "protocol_area": "Foot",
+            "copy_index": 0,
+            "file_size": 100,
+        }
+        row.update(overrides)
+        return row
+
+    def test_exactly_one_copy_stays_canonical(self):
+        # Real case: TL's October scans exist in both the October and the
+        # (wrong) May folder, under the same filename.
+        scans = pd.DataFrame(
+            [
+                self._copy("TL_520@october_2020", "october_2020"),
+                self._copy("TL_520@may_2021", "may_2021"),
+            ]
+        )
+
+        marked = mark_duplicates(scans)
+
+        assert marked["is_duplicate_of"].isna().sum() == 1
+
+    def test_the_copy_in_its_own_sessions_folder_is_kept(self):
+        scans = pd.DataFrame(
+            [
+                self._copy("TL_520@may_2021", "may_2021"),
+                self._copy("TL_520@october_2020", "october_2020"),
+            ]
+        )
+
+        marked = mark_duplicates(scans).set_index("scan_id")
+
+        assert pd.isna(marked.loc["TL_520@october_2020", "is_duplicate_of"])
+        assert marked.loc["TL_520@may_2021", "is_duplicate_of"] == "TL_520@october_2020"
+
+
 class TestPhaseOverlaps:
     def _row(self, scan, column, area, phase="Baseline", date="2021-05-19"):
         return {
@@ -438,7 +483,7 @@ class TestPhaseOverlaps:
             "excel_column": column,
         }
 
-    def test_same_site_overlap_needs_fixing(self):
+    def test_same_site_overlap_is_excluded(self):
         long_df = pd.DataFrame(
             [self._row(n, "Foot Baseline", "Foot") for n in range(2200, 2205)]
             + [self._row(n, "Foot PORH", "Foot", "PORH") for n in range(2200, 2212)]
@@ -447,7 +492,7 @@ class TestPhaseOverlaps:
         overlaps = find_phase_overlaps(long_df)
 
         assert len(overlaps) == 1
-        assert bool(overlaps.iloc[0]["needs_fix"])
+        assert overlaps.iloc[0]["action"] == "excluded"
         assert overlaps.iloc[0]["raw_value"] == "2200-2204"
 
     def test_cross_site_overlap_is_informational(self):
@@ -459,7 +504,7 @@ class TestPhaseOverlaps:
         overlaps = find_phase_overlaps(long_df)
 
         assert len(overlaps) == 1
-        assert not bool(overlaps.iloc[0]["needs_fix"])
+        assert overlaps.iloc[0]["action"] == "resolved_by_body_site"
 
     def test_separate_visits_do_not_count_as_overlapping(self):
         long_df = pd.DataFrame(
@@ -475,3 +520,35 @@ class TestPhaseOverlaps:
         long_df = pd.DataFrame([self._row(n, "Foot Baseline", "Foot") for n in range(5)])
 
         assert find_phase_overlaps(long_df).empty
+
+
+class TestExclusion:
+    def _scan(self, **overrides):
+        scan = {
+            "header_status": "ok",
+            "is_duplicate_of": None,
+            "match_method": "exact",
+            "phase_ambiguous": False,
+        }
+        scan.update(overrides)
+        return pd.Series(scan)
+
+    def test_a_clean_scan_is_not_excluded(self):
+        from manifest.build_manifest import exclusion_reason
+
+        assert exclusion_reason(self._scan()) is None
+
+    def test_phase_ambiguous_scans_are_excluded(self):
+        # numpy booleans, as pandas produces them, must count too.
+        import numpy as np
+        from manifest.build_manifest import exclusion_reason
+
+        assert exclusion_reason(self._scan(phase_ambiguous=np.True_)) == "phase_ambiguous"
+
+    def test_every_unusable_kind_has_a_reason(self):
+        from manifest.build_manifest import exclusion_reason
+
+        assert exclusion_reason(self._scan(header_status="truncated")) == "unreadable_file"
+        assert exclusion_reason(self._scan(is_duplicate_of="x")) == "duplicate_file"
+        assert exclusion_reason(self._scan(match_method="ambiguous")) == "patient_ambiguous"
+        assert exclusion_reason(self._scan(match_method="unmatched")) == "no_scan_log_entry"

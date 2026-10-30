@@ -116,6 +116,12 @@ def validate(manifest_dir: Path) -> int:
         if unmatched:
             warnings.append(f"{unmatched} scans have no scan-log entry")
 
+        if "exclusion_reason" in scans.columns:
+            _section("Excluded acquisitions")
+            reasons = scans["exclusion_reason"].value_counts()
+            print(reasons.to_string() if not reasons.empty else "none")
+            print(f"usable: {int((~scans['excluded'].astype(bool)).sum())} of {len(scans)}")
+
         duplicates = scans["is_duplicate_of"].notna().sum()
         if duplicates:
             _section("Duplicates")
@@ -158,16 +164,15 @@ def validate(manifest_dir: Path) -> int:
                     "participant - matching on scan number alone is unsafe for these"
                 )
             if name == "scan_log_issues.csv":
-                needs_fix = (
-                    table["needs_fix"].astype(str).str.lower() == "true"
-                    if "needs_fix" in table.columns
-                    else pd.Series(True, index=table.index)
-                )
-                print(f"needing a fix in the spreadsheet: {int(needs_fix.sum())}")
-                if needs_fix.any():
+                if "action" in table.columns:
+                    print(table["action"].value_counts().to_string())
+                    to_fix = table[table["action"] == "fix_in_spreadsheet"]
+                else:
+                    to_fix = table
+                if not to_fix.empty:
                     warnings.append(
-                        f"{int(needs_fix.sum())} scan-log entries need correcting in the source "
-                        "spreadsheets (see scan_log_issues.csv, needs_fix=True)"
+                        f"{len(to_fix)} scan-log cells need correcting in the source "
+                        "spreadsheets (see scan_log_issues.csv, action=fix_in_spreadsheet)"
                     )
             if name == "demographics_issues.csv":
                 print(table["issue"].value_counts().to_string())

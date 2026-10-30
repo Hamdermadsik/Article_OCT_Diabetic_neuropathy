@@ -160,6 +160,13 @@ def index_drive(roots: dict[str, Path], cache_path: Path) -> tuple[pd.DataFrame,
             }
         )
 
+    # The same file can sit in both session folders. Its name alone then no
+    # longer identifies one row, so those copies are qualified by folder.
+    stems = pd.Series([r["scan_id"] for r in records]).value_counts()
+    for record in records:
+        if stems.get(record["scan_id"], 0) > 1:
+            record["scan_id"] = f"{record['scan_id']}@{record['folder_cohort']}"
+
     misfiled = sum(1 for r in records if r["cohort"] != r["folder_cohort"])
     if misfiled:
         print(
@@ -168,6 +175,26 @@ def index_drive(roots: dict[str, Path], cache_path: Path) -> tuple[pd.DataFrame,
             file=sys.stderr,
         )
     return pd.DataFrame(records), pd.DataFrame(unparsed)
+
+
+def exclusion_reason(scan) -> str | None:
+    """Why a scan cannot be used, or None if it can.
+
+    One column for every reason, so downstream analysis filters on a single
+    field rather than re-deriving which scans are trustworthy.
+    """
+    if scan["header_status"] != "ok":
+        return "unreadable_file"
+    if pd.notna(scan["is_duplicate_of"]):
+        return "duplicate_file"
+    if scan["match_method"] == "ambiguous":
+        return "patient_ambiguous"
+    if scan["match_method"] == "unmatched":
+        return "no_scan_log_entry"
+    phase_ambiguous = scan.get("phase_ambiguous", False)
+    if pd.notna(phase_ambiguous) and bool(phase_ambiguous):
+        return "phase_ambiguous"
+    return None
 
 
 PATIENT_COLUMNS = [
@@ -224,14 +251,13 @@ def main() -> int:
     long_df, file_initials, alias_issues = apply_aliases(long_df, decisions.aliases)
     overlaps = find_phase_overlaps(long_df)
     scan_log_issues = pd.concat(
-        [scan_log_issues.assign(needs_fix=True), overlaps], ignore_index=True
+        [scan_log_issues.assign(action="fix_in_spreadsheet"), overlaps], ignore_index=True
     )
     if not overlaps.empty:
-        to_fix = int(overlaps["needs_fix"].sum())
+        excluded = int((overlaps["action"] == "excluded").sum())
         print(
-            f"  ! {len(overlaps)} groups of scans listed under two phases "
-            f"({to_fix} on the same body site - see scan_log_issues.csv)",
-            file=sys.stderr,
+            f"  {len(overlaps)} groups of scans listed under two phases; "
+            f"{excluded} on the same body site are excluded (see scan_log_issues.csv)"
         )
     print(f"  may={len(may_long)} october={len(october_long)} expected scan rows")
     malformed = len(scan_log_issues) - len(overlaps)
@@ -296,13 +322,14 @@ def main() -> int:
         scans["patient_id"] = [
             patient_of.get((row.cohort, row.participant_id)) for row in scans.itertuples()
         ]
+        scans["exclusion_reason"] = [exclusion_reason(row) for _, row in scans.iterrows()]
+        scans["excluded"] = scans["exclusion_reason"].notna()
         # Baseline/Regular acquisitions are the segmentation-relevant ones;
         # Isc/PORH/Flavanol revisit the same anatomy under different perfusion.
         scans["selected_for_segmentation"] = (
             (scans["phase"] == "Baseline")
             & (scans["condition"] == "Regular")
-            & scans["is_duplicate_of"].isna()
-            & (scans["header_status"] == "ok")
+            & ~scans["excluded"]
         )
         print(
             "  "
