@@ -140,3 +140,16 @@ def restore_from_model(
     return cv2.resize(
         image, (params.original_width, params.original_height), interpolation=interpolation
     )
+
+
+# The OCTA DICOMs are display renderings: a grey structural image with blood
+# flow painted on as a red tint (green and blue stay equal everywhere). Red is
+# therefore grey plus flow; green is the untinted grey. The segmentation model
+# was trained on plain grey images, and fed the red channel it reads the flow
+# tint as tissue, placing the DEJ a median 6 px (up to 16 px) too deep.
+STRUCTURAL_CHANNEL = 1
+
+
+def structural_image(image: np.ndarray) -> np.ndarray:
+    """The grey structural image, without any flow overlay."""
+    return image[..., STRUCTURAL_CHANNEL] if image.ndim == 3 else image

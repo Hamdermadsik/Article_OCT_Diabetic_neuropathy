@@ -109,3 +109,23 @@ def test_unknown_preprocessing_mode_is_rejected():
 
     with pytest.raises(ValueError, match="unknown preprocessing"):
         resize_for_model(np.zeros((10, 10)), (8, 8), "stretch")
+
+
+def test_structural_image_ignores_the_red_flow_tint():
+    # The DICOMs paint flow onto a grey image as a red tint; the model must see
+    # the grey underneath, not grey + flow.
+    from image_utils import structural_image
+
+    grey = np.full((4, 4), 40, dtype=np.uint8)
+    rendered = np.stack([grey, grey, grey], axis=-1)
+    rendered[1:3, 1:3, 0] = 200  # flow tint on red only
+
+    assert (structural_image(rendered) == grey).all()
+
+
+def test_structural_image_passes_greyscale_through():
+    from image_utils import structural_image
+
+    grey = np.arange(12, dtype=np.uint8).reshape(3, 4)
+
+    assert (structural_image(grey) == grey).all()

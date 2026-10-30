@@ -5,7 +5,7 @@ import SimpleITK as sitk
 import cv2
 from pathlib import Path
 
-from image_utils import resize_for_model, restore_from_model
+from image_utils import resize_for_model, restore_from_model, structural_image
 from model_utils import (
     DEFAULT_TARGET_SIZE,
     LEGACY_PREPROCESSING,
@@ -31,11 +31,7 @@ def predict_mask(model, image, device, target_size=None):
     max_val = 65535.0 if image.dtype == np.uint16 else 255.0
     img_norm = image.astype(np.float32) / max_val
     
-    # Extract structural channel if RGB
-    if len(img_norm.shape) == 3:
-        img_for_model = img_norm[:, :, 0]
-    else:
-        img_for_model = img_norm
+    img_for_model = structural_image(img_norm)
 
     # Resize and scale to [-1, 1] for model
     # Prepare input exactly as this model's training data was prepared.
