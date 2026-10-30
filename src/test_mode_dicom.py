@@ -5,9 +5,10 @@ import SimpleITK as sitk
 import cv2
 from pathlib import Path
 
-from image_utils import letterbox_resize, letterbox_unresize
+from image_utils import resize_for_model, restore_from_model
 from model_utils import (
     DEFAULT_TARGET_SIZE,
+    LEGACY_PREPROCESSING,
     NORMALIZE_MEAN,
     NORMALIZE_STD,
     default_model_path,
@@ -23,7 +24,7 @@ def import_dicom_volume(path):
     dicom_image = reader.Execute()
     return sitk.GetArrayFromImage(dicom_image)
 
-def predict_mask(model, image, device, target_size=DEFAULT_TARGET_SIZE):
+def predict_mask(model, image, device, target_size=None):
     """Runs inference with proper normalization mapping to [-1, 1]."""
     
     # Scale to [0, 1]
@@ -37,8 +38,11 @@ def predict_mask(model, image, device, target_size=DEFAULT_TARGET_SIZE):
         img_for_model = img_norm
 
     # Resize and scale to [-1, 1] for model
-    img_resized, letterbox = letterbox_resize(
-        img_for_model, target_size, interpolation=cv2.INTER_LINEAR
+    # Prepare input exactly as this model's training data was prepared.
+    mode = getattr(model, "preprocessing", LEGACY_PREPROCESSING)
+    target_size = target_size or getattr(model, "target_size", DEFAULT_TARGET_SIZE)
+    img_resized, resize_params = resize_for_model(
+        img_for_model, target_size, mode, interpolation=cv2.INTER_LINEAR
     )
     img_resized = (img_resized - NORMALIZE_MEAN) / NORMALIZE_STD
     
@@ -51,7 +55,7 @@ def predict_mask(model, image, device, target_size=DEFAULT_TARGET_SIZE):
     
     # Resize output mask back to native size
     pred_mask_np = pred_mask.squeeze().cpu().numpy()
-    resized_mask = letterbox_unresize(pred_mask_np, letterbox, interpolation=cv2.INTER_NEAREST)
+    resized_mask = restore_from_model(pred_mask_np, resize_params, interpolation=cv2.INTER_NEAREST)
     
     return img_for_model, resized_mask
 

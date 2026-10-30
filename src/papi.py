@@ -8,9 +8,10 @@ from skimage import measure, morphology
 import math
 from pathlib import Path
 
-from image_utils import letterbox_resize, letterbox_unresize
+from image_utils import resize_for_model, restore_from_model
 from model_utils import (
     DEFAULT_TARGET_SIZE,
+    LEGACY_PREPROCESSING,
     NORMALIZE_MEAN,
     NORMALIZE_STD,
     default_model_path,
@@ -34,7 +35,7 @@ def import_dicom(path):
 
 # --- Processing Functions ---
 
-def test_model_on_sample_image(model, image, device, target_size=DEFAULT_TARGET_SIZE, plot=False):
+def test_model_on_sample_image(model, image, device, target_size=None, plot=False):
     
     max_val = 65535.0 if image.dtype == np.uint16 else 255.0
     img_norm = image.astype(np.float32) / max_val
@@ -47,8 +48,11 @@ def test_model_on_sample_image(model, image, device, target_size=DEFAULT_TARGET_
     else:
         img_for_model = img_norm
 
-    img_resized, letterbox = letterbox_resize(
-        img_for_model, target_size, interpolation=cv2.INTER_LINEAR
+    # Prepare input exactly as this model's training data was prepared.
+    mode = getattr(model, "preprocessing", LEGACY_PREPROCESSING)
+    target_size = target_size or getattr(model, "target_size", DEFAULT_TARGET_SIZE)
+    img_resized, resize_params = resize_for_model(
+        img_for_model, target_size, mode, interpolation=cv2.INTER_LINEAR
     )
     img_resized = (img_resized - NORMALIZE_MEAN) / NORMALIZE_STD
     img_tensor = torch.from_numpy(img_resized).unsqueeze(0).unsqueeze(0).to(device)
@@ -59,7 +63,7 @@ def test_model_on_sample_image(model, image, device, target_size=DEFAULT_TARGET_
         pred_mask = (pred_mask > 0.5).float()
     
     pred_mask_np = pred_mask.squeeze().cpu().numpy()
-    resized_mask = letterbox_unresize(pred_mask_np, letterbox, interpolation=cv2.INTER_NEAREST)
+    resized_mask = restore_from_model(pred_mask_np, resize_params, interpolation=cv2.INTER_NEAREST)
 
     if plot:
         plt.figure(figsize=(12, 5))

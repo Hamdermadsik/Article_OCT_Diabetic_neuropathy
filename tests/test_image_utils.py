@@ -89,3 +89,23 @@ def test_padding_does_not_bleed_into_content():
     ]
     assert (content == 255).all()
     assert output.sum() == content.sum()
+
+
+def test_squash_mode_round_trips_to_the_original_size():
+    from image_utils import SQUASH, resize_for_model, restore_from_model
+
+    mask = np.zeros((460, 1174), dtype=np.float32)
+    mask[150:300, :] = 1.0
+
+    resized, params = resize_for_model(mask, (512, 512), SQUASH, interpolation=cv2.INTER_NEAREST)
+    restored = restore_from_model(resized, params)
+
+    assert resized.shape == (512, 512)
+    assert restored.shape == mask.shape
+
+
+def test_unknown_preprocessing_mode_is_rejected():
+    from image_utils import resize_for_model
+
+    with pytest.raises(ValueError, match="unknown preprocessing"):
+        resize_for_model(np.zeros((10, 10)), (8, 8), "stretch")

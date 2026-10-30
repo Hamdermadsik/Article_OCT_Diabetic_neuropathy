@@ -48,14 +48,37 @@ def build_unet(encoder_weights: str | None = None) -> smp.Unet:
     )
 
 
+# Checkpoints saved before preprocessing was recorded are bare state dicts,
+# and every one of them was trained on square-resized ("squash") input.
+LEGACY_PREPROCESSING = "squash"
+
+
+def checkpoint_payload(model, preprocessing: str, target_size) -> dict:
+    """What to save: the weights plus how their input must be prepared."""
+    return {
+        "model_state_dict": model.state_dict(),
+        "preprocessing": preprocessing,
+        "target_size": list(target_size),
+    }
+
+
 def load_pytorch_model(model_path: str | Path, device: torch.device | str) -> smp.Unet:
-    """Load a trained checkpoint, accepting bare or wrapped state dicts."""
+    """Load a trained checkpoint, accepting bare or wrapped state dicts.
+
+    The returned model carries ``preprocessing`` and ``target_size``: inference
+    must prepare input exactly as the model's training data was prepared, or
+    accuracy drops sharply.
+    """
     model = build_unet(encoder_weights=None)
     checkpoint = torch.load(str(model_path), map_location=device)
     if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
         model.load_state_dict(checkpoint["model_state_dict"])
+        model.preprocessing = checkpoint.get("preprocessing", LEGACY_PREPROCESSING)
+        model.target_size = tuple(checkpoint.get("target_size", DEFAULT_TARGET_SIZE))
     else:
         model.load_state_dict(checkpoint)
+        model.preprocessing = LEGACY_PREPROCESSING
+        model.target_size = DEFAULT_TARGET_SIZE
     model.to(device)
     model.eval()
     return model

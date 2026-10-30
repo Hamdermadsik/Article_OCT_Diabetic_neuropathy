@@ -4,7 +4,7 @@ import numpy as np
 from pathlib import Path
 from dataloaders import OCT_SKIN, frames_from_directories
 from functions import dice_coefficient
-from model_utils import DEFAULT_TARGET_SIZE, default_model_path, load_pytorch_model, project_root
+from model_utils import default_model_path, load_pytorch_model, project_root
 
 def visualize_predictions(model_path, data_dir, device='cuda', num_samples=5):
     # --- 1. SET UP PATHS ---
@@ -26,8 +26,9 @@ def visualize_predictions(model_path, data_dir, device='cuda', num_samples=5):
     # --- 3. PREPARE DATASET ---
     dataset = OCT_SKIN(
         frames_from_directories(images_dir, masks_dir),
-        target_size=DEFAULT_TARGET_SIZE,
+        target_size=model.target_size,
         augment=False,
+        preprocessing=model.preprocessing,
     )
     
     if len(dataset) == 0:

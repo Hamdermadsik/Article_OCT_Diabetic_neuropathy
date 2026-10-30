@@ -15,7 +15,8 @@ from torch.utils.data import DataLoader, Subset
 
 from dataloaders import OCT_SKIN, frames_from_directories, load_manifest_frames
 from functions import CombinedLoss, train_one_epoch, validate_one_epoch
-from model_utils import build_unet
+from image_utils import LETTERBOX
+from model_utils import build_unet, checkpoint_payload, load_pytorch_model
 from splits import assert_no_patient_overlap, describe_split, split_frames
 
 
@@ -69,8 +70,8 @@ def main(cfg: DictConfig):
     if not val_indices:
         log.warning("Validation set is empty; best-checkpoint selection is disabled.")
 
-    train_dataset = OCT_SKIN(frames, target_size=target_size, augment=True)
-    val_dataset = OCT_SKIN(frames, target_size=target_size, augment=False)
+    train_dataset = OCT_SKIN(frames, target_size=target_size, augment=True, preprocessing=LETTERBOX)
+    val_dataset = OCT_SKIN(frames, target_size=target_size, augment=False, preprocessing=LETTERBOX)
 
     train_dataloader = DataLoader(
         Subset(train_dataset, train_indices),
@@ -127,11 +128,11 @@ def main(cfg: DictConfig):
         if val_dice > best_val_dice:
             log.info(f"   --> New best model! DICE {best_val_dice:.4f} -> {val_dice:.4f}. Saving.")
             best_val_dice = val_dice
-            torch.save(model.state_dict(), BEST_MODEL_PATH)
+            torch.save(checkpoint_payload(model, LETTERBOX, target_size), BEST_MODEL_PATH)
             torch.save(history, HISTORY_PATH)
 
     if not BEST_MODEL_PATH.exists():
-        torch.save(model.state_dict(), BEST_MODEL_PATH)
+        torch.save(checkpoint_payload(model, LETTERBOX, target_size), BEST_MODEL_PATH)
         torch.save(history, HISTORY_PATH)
 
     # --- TEST EVALUATION ---
@@ -140,10 +141,14 @@ def main(cfg: DictConfig):
     )
     if len(test_frames) > 0:
         log.info(f"Found {len(test_frames)} test frames. Loading best model for evaluation...")
-        model.load_state_dict(torch.load(BEST_MODEL_PATH))
-        model.eval()
+        model = load_pytorch_model(BEST_MODEL_PATH, DEVICE)
 
-        test_dataset = OCT_SKIN(test_frames, target_size=target_size, augment=False)
+        test_dataset = OCT_SKIN(
+            test_frames,
+            target_size=model.target_size,
+            augment=False,
+            preprocessing=model.preprocessing,
+        )
         test_dataloader = DataLoader(
             test_dataset,
             batch_size=hp.batch_size,

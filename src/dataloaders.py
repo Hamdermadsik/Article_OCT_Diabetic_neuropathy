@@ -20,7 +20,7 @@ import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-from image_utils import letterbox_resize
+from image_utils import LETTERBOX, resize_for_model
 from model_utils import DEFAULT_TARGET_SIZE, NORMALIZE_MEAN, NORMALIZE_STD
 
 log = logging.getLogger(__name__)
@@ -89,12 +89,15 @@ class OCT_SKIN(Dataset):
         frames: pd.DataFrame,
         target_size: tuple[int, int] = DEFAULT_TARGET_SIZE,
         augment: bool = False,
+        preprocessing: str = LETTERBOX,
     ):
         """
         Args:
             frames: table with ``png_path`` and ``mask_path`` columns.
             target_size: model input size as (height, width).
             augment: apply geometric and photometric augmentation.
+            preprocessing: how images are resized to ``target_size``; must
+                match what the model being trained or evaluated expects.
         """
         missing_columns = {"png_path", "mask_path"} - set(frames.columns)
         if missing_columns:
@@ -110,6 +113,7 @@ class OCT_SKIN(Dataset):
         self.frames = usable.reset_index(drop=True)
         self.target_size = tuple(target_size)
         self.augment = augment
+        self.preprocessing = preprocessing
         log.info("Dataset initialized with %d pairs (augment=%s)", len(self.frames), augment)
 
     def __len__(self) -> int:
@@ -140,9 +144,13 @@ class OCT_SKIN(Dataset):
                 f"{image.shape} vs {mask.shape}"
             )
 
-        # Identical letterbox parameters for both, so the pair stays aligned.
-        image, _ = letterbox_resize(image, self.target_size, interpolation=cv2.INTER_LINEAR)
-        mask, _ = letterbox_resize(mask, self.target_size, interpolation=cv2.INTER_NEAREST)
+        # Identical resize for both, so the pair stays aligned.
+        image, _ = resize_for_model(
+            image, self.target_size, self.preprocessing, interpolation=cv2.INTER_LINEAR
+        )
+        mask, _ = resize_for_model(
+            mask, self.target_size, self.preprocessing, interpolation=cv2.INTER_NEAREST
+        )
 
         image = image.astype(np.float32) / 255.0
         mask = (mask > 0).astype(np.float32)

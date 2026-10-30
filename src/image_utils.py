@@ -8,6 +8,11 @@ before the network ever sees it -- and again, differently, at inference time.
 Letterboxing scales both axes by the same factor and pads the remainder, so a
 structure's shape is preserved regardless of the source geometry (which does
 vary between acquisition cohorts).
+
+A model must be fed input prepared the same way as its training data, so the
+old square resize ("squash") is kept for checkpoints trained with it: the
+original model scores Dice 0.88 on its test frames with squashed input but
+0.77 with letterboxed input.
 """
 
 from __future__ import annotations
@@ -95,4 +100,43 @@ def letterbox_unresize(
         cropped,
         (params.original_width, params.original_height),
         interpolation=interpolation,
+    )
+
+
+LETTERBOX = "letterbox"
+SQUASH = "squash"
+
+
+@dataclass(frozen=True)
+class SquashParams:
+    original_height: int
+    original_width: int
+
+
+def resize_for_model(
+    image: np.ndarray,
+    target_size: tuple[int, int],
+    mode: str,
+    interpolation: int = cv2.INTER_LINEAR,
+) -> tuple[np.ndarray, LetterboxParams | SquashParams]:
+    """Resize ``image`` to the model input size the way ``mode`` dictates."""
+    if mode == LETTERBOX:
+        return letterbox_resize(image, target_size, interpolation=interpolation)
+    if mode == SQUASH:
+        height, width = image.shape[:2]
+        resized = cv2.resize(image, (target_size[1], target_size[0]), interpolation=interpolation)
+        return resized, SquashParams(height, width)
+    raise ValueError(f"unknown preprocessing mode {mode!r}")
+
+
+def restore_from_model(
+    image: np.ndarray,
+    params: LetterboxParams | SquashParams,
+    interpolation: int = cv2.INTER_NEAREST,
+) -> np.ndarray:
+    """Map a model-sized output back to the original image size."""
+    if isinstance(params, LetterboxParams):
+        return letterbox_unresize(image, params, interpolation=interpolation)
+    return cv2.resize(
+        image, (params.original_width, params.original_height), interpolation=interpolation
     )
