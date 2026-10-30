@@ -27,6 +27,14 @@ if __package__ in (None, ""):  # allow `python src/manifest/build_manifest.py`
         load_october_demographics,
         resolve_demographics,
     )
+    from manifest.decisions import (
+        apply_aliases,
+        apply_file_initials,
+        apply_identity_decisions,
+        decision_label,
+        drop_superseded_issues,
+        load_decisions,
+    )
     from manifest.dicom_index import iter_dicom_files, read_dicom_header
     from manifest.excel_utils import parse_dicom_filename
     from manifest.legacy_frames import build_legacy_frames
@@ -47,6 +55,14 @@ else:
         load_october_demographics,
         resolve_demographics,
     )
+    from .decisions import (
+        apply_aliases,
+        apply_file_initials,
+        apply_identity_decisions,
+        decision_label,
+        drop_superseded_issues,
+        load_decisions,
+    )
     from .dicom_index import iter_dicom_files, read_dicom_header
     from .excel_utils import parse_dicom_filename
     from .legacy_frames import build_legacy_frames
@@ -65,7 +81,8 @@ DEFAULT_DRIVE_ROOTS = {
     specs.MAY_COHORT: Path("/mnt/d/OCTA DICOM files may 2021"),
     specs.OCTOBER_COHORT: Path("/mnt/d/OCTOBER"),
 }
-COHORT_PREFIX = {specs.MAY_COHORT: "MAY", specs.OCTOBER_COHORT: "OCT"}
+DECISIONS_FILE = Path("configs") / "manifest_decisions.yaml"
+DRIVE_CACHE_NAME = "drive_index.csv"
 
 # The two sessions are seven months apart, so the acquisition date written into
 # every filename identifies the session unambiguously. Files have been found
@@ -80,94 +97,88 @@ def session_for_date(date, folder_cohort: str) -> str:
     return specs.OCTOBER_COHORT if date < SESSION_BOUNDARY else specs.MAY_COHORT
 
 
-def canonical_patient_id(cohort: str, participant_id: str) -> str:
-    """Cohort-scoped patient key.
+def _root_available(cohort: str, root: Path) -> bool:
+    try:
+        return root.exists()
+    except OSError as exc:
+        # A stale mount point (drive unplugged, /mnt/d still mounted) raises
+        # rather than returning False.
+        print(f"  ! {cohort}: {root} unavailable ({exc.strerror})", file=sys.stderr)
+        return False
 
-    Cohorts are kept separate by default: a participant recorded in both is two
-    rows until someone confirms they are the same person. Merging on shared
-    initials alone is exactly the mistake this manifest exists to prevent.
+
+def index_drive(roots: dict[str, Path], cache_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Header-index every acquisition. Returns (files, unparsed_filenames).
+
+    Headers are read from the drive when it is attached and saved to
+    ``cache_path``. When it is not, the saved copy is used instead, so the
+    spreadsheets and decisions can be revised and the manifest rebuilt without
+    the drive. Only drive-derived data is cached; filenames are re-parsed on
+    every run so changes to the parsing rules still take effect.
     """
-    return f"{COHORT_PREFIX.get(cohort, cohort.upper())}-{participant_id}"
+    cache = pd.read_csv(cache_path) if cache_path.exists() else pd.DataFrame()
 
-
-def index_drive(roots: dict[str, Path]) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Header-index every acquisition. Returns (scans, unparsed_filenames)."""
-    records, unparsed = [], []
+    headers = []
     for cohort, root in roots.items():
-        try:
-            root_available = root.exists()
-        except OSError as exc:
-            # A stale mount point (drive unplugged but /mnt/d still mounted)
-            # raises rather than returning False.
-            print(f"  ! {cohort}: {root} unavailable ({exc.strerror}) - skipping", file=sys.stderr)
+        if _root_available(cohort, root):
+            rows = [{**read_dicom_header(path), "folder_cohort": cohort} for path in iter_dicom_files(root)]
+            print(f"  {cohort}: read {len(rows)} acquisitions from {root}")
+        elif not cache.empty and (cache["folder_cohort"] == cohort).any():
+            rows = cache[cache["folder_cohort"] == cohort].to_dict("records")
+            print(
+                f"  {cohort}: drive not attached - using the {len(rows)} acquisitions saved "
+                f"from the last time it was read ({cache_path.name})"
+            )
+        else:
+            print(f"  ! {cohort}: drive not attached and no saved copy - skipping", file=sys.stderr)
             continue
-        if not root_available:
-            print(f"  ! {cohort}: {root} not available - skipping", file=sys.stderr)
-            continue
+        headers.extend(rows)
 
-        count = 0
-        for path in iter_dicom_files(root):
-            header = read_dicom_header(path)
-            parsed = parse_dicom_filename(path.name)
-            if parsed is None:
-                unparsed.append({"cohort": cohort, "filepath": str(path), "filename": path.name})
-                continue
-            records.append(
+    if headers:
+        pd.DataFrame(headers).to_csv(cache_path, index=False)
+
+    records, unparsed = [], []
+    for header in headers:
+        parsed = parse_dicom_filename(header["filename"])
+        if parsed is None:
+            unparsed.append(
                 {
-                    **parsed,
-                    **header,
-                    "folder_cohort": cohort,
-                    "cohort": session_for_date(parsed["date"], cohort),
-                    "scan_id": path.stem,
+                    "cohort": header["folder_cohort"],
+                    "filepath": header["filepath"],
+                    "filename": header["filename"],
                 }
             )
-            count += 1
-        print(f"  {cohort}: indexed {count} acquisitions from {root}")
+            continue
+        records.append(
+            {
+                **header,
+                **parsed,
+                "cohort": session_for_date(parsed["date"], header["folder_cohort"]),
+                "scan_id": Path(header["filename"]).stem,
+            }
+        )
 
-    if records:
-        misfiled = sum(1 for r in records if r["cohort"] != r["folder_cohort"])
-        if misfiled:
-            print(
-                f"  ! {misfiled} acquisition(s) are in the other session's folder; "
-                "assigned by acquisition date (see folder_cohort column)",
-                file=sys.stderr,
-            )
-
+    misfiled = sum(1 for r in records if r["cohort"] != r["folder_cohort"])
+    if misfiled:
+        print(
+            f"  ! {misfiled} acquisition(s) are in the other session's folder; "
+            "assigned by acquisition date (see folder_cohort column)",
+            file=sys.stderr,
+        )
     return pd.DataFrame(records), pd.DataFrame(unparsed)
 
 
-def build_patients(participants: pd.DataFrame) -> pd.DataFrame:
-    """One row per scanned participant, with identity confidence recorded.
-
-    Participants whose initials also occur in the other session are kept as
-    separate patients until a person confirms they are the same individual.
-    """
-    if participants.empty:
-        return participants.assign(patient_id=None, identity_confidence=None)
-
-    by_cohort = participants.groupby("cohort")["initials"].apply(set).to_dict()
-    in_both = by_cohort.get(specs.MAY_COHORT, set()) & by_cohort.get(specs.OCTOBER_COHORT, set())
-
-    patients = participants.copy()
-    patients["patient_id"] = [
-        canonical_patient_id(row.cohort, row.participant_id) for row in patients.itertuples()
-    ]
-    patients["identity_confidence"] = [
-        "unresolved_kept_separate" if initials in in_both else "single_cohort"
-        for initials in patients["initials"]
-    ]
-    columns = [
-        "patient_id",
-        "cohort",
-        "participant_id",
-        "initials",
-        "group",
-        "sex",
-        "age",
-        "demographics_source",
-        "identity_confidence",
-    ]
-    return patients[columns].sort_values("patient_id").reset_index(drop=True)
+PATIENT_COLUMNS = [
+    "patient_id",
+    "cohort",
+    "participant_id",
+    "initials",
+    "group",
+    "sex",
+    "age",
+    "demographics_source",
+    "identity_confidence",
+]
 
 
 def main() -> int:
@@ -178,12 +189,19 @@ def main() -> int:
         "--october-drive", type=Path, default=DEFAULT_DRIVE_ROOTS[specs.OCTOBER_COHORT]
     )
     parser.add_argument("--out-dir", type=Path, default=None)
+    parser.add_argument(
+        "--decisions",
+        type=Path,
+        default=None,
+        help=f"identity decisions file (default: <repo>/{DECISIONS_FILE})",
+    )
     args = parser.parse_args()
 
     repo = args.repo_root
     excel_dir = repo / "excel_filer"
     out_dir = args.out_dir or (repo / "data" / "manifest")
     out_dir.mkdir(parents=True, exist_ok=True)
+    decisions = load_decisions(args.decisions or (repo / DECISIONS_FILE))
 
     print("Parsing Excel scan logs...")
     may_long, scan_log_issues = parse_may(load_may_sheet(excel_dir / "MAY.xlsx"))
@@ -201,6 +219,7 @@ def main() -> int:
     )
     october_long = parse_october(october_sheet1, october_sheet2)
     long_df = pd.concat([may_long, october_long], ignore_index=True)
+    long_df, file_initials, alias_issues = apply_aliases(long_df, decisions.aliases)
     print(f"  may={len(may_long)} october={len(october_long)} expected scan rows")
     if not scan_log_issues.empty:
         print(
@@ -210,28 +229,42 @@ def main() -> int:
         )
 
     print("Resolving demographics...")
+    demographics_sheet = load_demographics_sheet(excel_dir / "2021-05-OCTAAgeing-hand.xlsx")
     participants, demographics_issues = resolve_demographics(
-        long_df,
-        load_demographics_sheet(excel_dir / "2021-05-OCTAAgeing-hand.xlsx"),
-        load_october_demographics(october_sheet1),
+        long_df, demographics_sheet, load_october_demographics(october_sheet1)
+    )
+    participants, identity_issues = apply_identity_decisions(
+        participants, decisions.identity, demographics_sheet
+    )
+    demographics_issues = drop_superseded_issues(
+        demographics_issues, alias_issues + identity_issues
     )
     ambiguous = find_ambiguous_initials(participants)
     ambiguous_initials = set(ambiguous["initials"]) if not ambiguous.empty else set()
     identity_review = build_identity_review(participants)
+    if not identity_review.empty:
+        identity_review["decision"] = decision_label(identity_review, decisions.identity)
+    confidence = participants["identity_confidence"].value_counts().to_dict()
     print(
-        f"  {len(participants)} scanned participants | "
-        f"{participants['age'].notna().sum()} with demographics | "
-        f"{len(demographics_issues)} demographics issues"
+        f"  {len(participants)} scanned participants -> "
+        f"{participants['patient_id'].nunique()} patients | "
+        f"{participants['age'].notna().sum()} with demographics"
     )
     print(
-        f"  initials scanned in both sessions: "
-        f"{sorted(identity_review['initials'].unique()) if not identity_review.empty else []}"
+        f"  identity: {confidence.get('confirmed_same_person', 0) // 2} confirmed same person, "
+        f"{confidence.get('confirmed_different_people', 0) // 2} confirmed different, "
+        f"{confidence.get('unresolved_kept_separate', 0) // 2} undecided"
     )
+    for issue in alias_issues + identity_issues:
+        if issue["issue"] in {"decision_unmatched", "alias_initials_shared", "same_person_disagrees"}:
+            print(f"  ! {issue['detail']}", file=sys.stderr)
 
     print("Indexing acquisition drive...")
     files_df, unparsed = index_drive(
-        {specs.MAY_COHORT: args.may_drive, specs.OCTOBER_COHORT: args.october_drive}
+        {specs.MAY_COHORT: args.may_drive, specs.OCTOBER_COHORT: args.october_drive},
+        out_dir / DRIVE_CACHE_NAME,
     )
+    files_df = apply_file_initials(files_df, file_initials)
 
     if files_df.empty:
         print("  ! no acquisitions indexed - scans.csv will be empty", file=sys.stderr)
@@ -244,11 +277,11 @@ def main() -> int:
             matched.append(match_scans(group, cohort_long, ambiguous_initials))
         scans = pd.concat(matched, ignore_index=True)
         scans = mark_duplicates(scans)
+        patient_of = {
+            (row.cohort, row.participant_id): row.patient_id for row in participants.itertuples()
+        }
         scans["patient_id"] = [
-            canonical_patient_id(row.cohort, row.participant_id)
-            if pd.notna(row.participant_id)
-            else None
-            for row in scans.itertuples()
+            patient_of.get((row.cohort, row.participant_id)) for row in scans.itertuples()
         ]
         # Baseline/Regular acquisitions are the segmentation-relevant ones;
         # Isc/PORH/Flavanol revisit the same anatomy under different perfusion.
@@ -266,7 +299,9 @@ def main() -> int:
             )
         )
 
-    patients = build_patients(participants)
+    patients = participants[PATIENT_COLUMNS].sort_values(["patient_id", "cohort"]).reset_index(
+        drop=True
+    )
     legacy = build_legacy_frames(
         repo / "data" / "train" / "images",
         repo / "data" / "train" / "mask",
@@ -311,7 +346,8 @@ def main() -> int:
         )
 
     print(
-        f"\nDone. patients={len(patients)} scans={len(scans)} legacy_frames={len(legacy)} "
+        f"\nDone. patients={patients['patient_id'].nunique()} scans={len(scans)} "
+        f"legacy_frames={len(legacy)} "
         f"errors={len(error_df)}"
     )
     return 0

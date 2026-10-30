@@ -1,0 +1,25 @@
+# Human decisions about participant identity, applied on every manifest build.
+#
+# The builder cannot tell from the spreadsheets alone whether two records are
+# the same person. Decisions recorded here are applied each time
+# src/manifest/build_manifest.py runs, so they survive regeneration.
+#
+# IDs are written as they appear in identity_review_candidates.csv.
+
+# A participant ID in the scan log that should be recorded under a different ID.
+# The drive's files keep their original initials; matching follows the alias.
+participant_id_aliases:
+  DP-12-RS: DP-12-SR  # agreed: DP-12-SR, 71-year-old woman (demographics sheet)
+
+# Participants with the same initials in both sessions.
+#   same_person: true  -> one patient; their scans can never be split between
+#                         train and validation.
+#   same_person: false -> different people; kept as separate patients.
+# Pairs not listed here stay separate and are reported as undecided.
+identity:
+  - {may: HP-20-CH, october: CH, same_person: true}
+  - {may: HP-35-LM, october: LM, same_person: true}
+  - {may: DP-13-DH, october: DH, same_person: true}  # age 66; missing from October log
+  - {may: HP-49-MB, october: MB, same_person: false}
+  - {may: HP-48-PM, october: PM, same_person: false}
+  - {may: HP-53-RM, october: RM, same_person: true}  # 26-year-old male; the 65 row is wrong

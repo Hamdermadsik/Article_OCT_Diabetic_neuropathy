@@ -48,7 +48,13 @@ def validate(manifest_dir: Path) -> int:
     warnings: list[str] = []
 
     _section("Manifest contents")
-    print(f"patients : {len(patients)}")
+    if not patients.empty:
+        print(
+            f"patients : {patients['patient_id'].nunique()} "
+            f"({len(patients)} participant records across sessions)"
+        )
+    else:
+        print("patients : 0")
     print(f"scans    : {len(scans)}")
     print(f"frames   : {len(frames)}")
 
@@ -66,12 +72,12 @@ def validate(manifest_dir: Path) -> int:
         print(f"missing demographics: {missing_demographics}")
         if missing_demographics:
             warnings.append(f"{missing_demographics} patients have no age/sex on record")
-        unresolved = (patients["identity_confidence"] == "unresolved_kept_separate").sum()
-        if unresolved:
-            print(f"cross-cohort initials kept separate: {unresolved}")
+        print(patients["identity_confidence"].value_counts().to_string())
+        undecided = patients[patients["identity_confidence"] == "unresolved_kept_separate"]
+        if not undecided.empty:
             warnings.append(
-                f"{unresolved} patients share initials across cohorts and are kept separate "
-                "pending review (see identity_review_candidates.csv)"
+                f"initials {sorted(undecided['initials'].unique())} occur in both sessions with "
+                "no recorded decision - kept separate (add one to configs/manifest_decisions.yaml)"
             )
 
     if not scans.empty:
@@ -152,10 +158,18 @@ def validate(manifest_dir: Path) -> int:
                 )
             if name == "demographics_issues.csv":
                 print(table["issue"].value_counts().to_string())
-                warnings.append(
-                    f"{len(table)} demographics issues in the source sheets "
-                    "(see demographics_issues.csv)"
-                )
+                open_issues = table[~table["issue"].str.startswith("resolved_")]
+                if not open_issues.empty:
+                    warnings.append(
+                        f"{len(open_issues)} open demographics issues in the source sheets "
+                        "(see demographics_issues.csv)"
+                    )
+                unmatched = table[table["issue"] == "decision_unmatched"]
+                if not unmatched.empty:
+                    failures.append(
+                        f"{len(unmatched)} entries in configs/manifest_decisions.yaml match no "
+                        "participant - check them for typos"
+                    )
 
     _section("Result")
     for warning in warnings:
