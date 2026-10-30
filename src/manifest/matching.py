@@ -92,9 +92,22 @@ def match_scans(
             resolution["match_method"] = name
 
             details = []
-            phases = {candidate["phase"] for candidate in candidates}
-            if len(phases) > 1:
-                details.append("scan listed under multiple phases: " + ",".join(sorted(map(str, phases))))
+            listings = {
+                (candidate["phase"], candidate["condition"], candidate["excel_column"])
+                for candidate in candidates
+            }
+            if len(listings) > 1:
+                # The participant is certain, so the scan still counts towards
+                # their patient for splitting. Its phase is not, and the phase
+                # decides whether it becomes a segmentation candidate -- so
+                # leave it unknown rather than take whichever listing sorted
+                # first.
+                for field in ("phase", "condition", "excel_column"):
+                    resolution[field] = None
+                details.append(
+                    "phase ambiguous: scan log lists it under "
+                    + " and ".join(sorted(str(column) for _, _, column in listings))
+                )
             if name in IDENTITY_UNCONSTRAINED:
                 details.append("identity inferred from scan number alone")
             if file_row.get("initials") in ambiguous_initials:
@@ -149,6 +162,72 @@ def find_scan_number_collisions(long_df: pd.DataFrame) -> pd.DataFrame:
     return unique.merge(colliding, on=["cohort", "scan_number"], how="inner").sort_values(
         ["cohort", "scan_number", "participant_id"]
     )
+
+
+def _as_ranges(numbers) -> str:
+    """``[2200, 2201, 2202, 2210]`` -> ``"2200-2202, 2210"``."""
+    numbers = sorted(set(int(n) for n in numbers))
+    spans, start, prev = [], numbers[0], numbers[0]
+    for number in numbers[1:]:
+        if number != prev + 1:
+            spans.append((start, prev))
+            start = number
+        prev = number
+    spans.append((start, prev))
+    return ", ".join(str(a) if a == b else f"{a}-{b}" for a, b in spans)
+
+
+def find_phase_overlaps(long_df: pd.DataFrame) -> pd.DataFrame:
+    """Scans a scan log lists under more than one phase for the same visit.
+
+    When the two listings are on different body sites, each file's own body
+    site says which one it is, so the overlap is informational. On the same
+    body site nothing can tell them apart and the cell needs correcting.
+    """
+    columns = ["cohort", "participant_id", "excel_column", "raw_value", "issue", "needs_fix"]
+    if long_df.empty:
+        return pd.DataFrame(columns=columns)
+
+    visits = ["cohort", "participant_id", "date", "scan_number"]
+    per_scan = (
+        long_df.groupby(visits, dropna=False)
+        .agg(
+            listings=("excel_column", lambda c: tuple(sorted(set(c)))),
+            areas=("protocol_area", lambda a: tuple(sorted(set(a.dropna())))),
+            unknown_area=("protocol_area", lambda a: a.isna().any()),
+        )
+        .reset_index()
+    )
+    per_scan = per_scan[per_scan["listings"].map(len) > 1]
+
+    rows = []
+    for (cohort, participant_id, date, listings), group in per_scan.groupby(
+        ["cohort", "participant_id", "date", "listings"], dropna=False
+    ):
+        same_site = len(group["areas"].iloc[0]) <= 1 or group["unknown_area"].any()
+        visit = f" on {pd.Timestamp(date):%Y-%m-%d}" if pd.notna(date) else ""
+        scans = _as_ranges(group["scan_number"])
+        if same_site:
+            issue = (
+                f"scans {scans}{visit} are listed under {' and '.join(listings)} on the same "
+                "body site - their phase is ambiguous and they are excluded from selection"
+            )
+        else:
+            issue = (
+                f"scans {scans}{visit} are listed under {' and '.join(listings)}, on different "
+                "body sites - each file's body site decides, so no fix is required"
+            )
+        rows.append(
+            {
+                "cohort": cohort,
+                "participant_id": participant_id,
+                "excel_column": " + ".join(listings),
+                "raw_value": scans,
+                "issue": issue,
+                "needs_fix": bool(same_site),
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
 
 
 def find_missing_expected_scans(long_df: pd.DataFrame, matched: pd.DataFrame) -> pd.DataFrame:

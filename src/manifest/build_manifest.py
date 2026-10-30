@@ -40,6 +40,7 @@ if __package__ in (None, ""):  # allow `python src/manifest/build_manifest.py`
     from manifest.legacy_frames import build_legacy_frames
     from manifest.matching import (
         find_missing_expected_scans,
+        find_phase_overlaps,
         find_scan_number_collisions,
         mark_duplicates,
         match_scans,
@@ -68,6 +69,7 @@ else:
     from .legacy_frames import build_legacy_frames
     from .matching import (
         find_missing_expected_scans,
+        find_phase_overlaps,
         find_scan_number_collisions,
         mark_duplicates,
         match_scans,
@@ -220,11 +222,22 @@ def main() -> int:
     october_long = parse_october(october_sheet1, october_sheet2)
     long_df = pd.concat([may_long, october_long], ignore_index=True)
     long_df, file_initials, alias_issues = apply_aliases(long_df, decisions.aliases)
-    print(f"  may={len(may_long)} october={len(october_long)} expected scan rows")
-    if not scan_log_issues.empty:
+    overlaps = find_phase_overlaps(long_df)
+    scan_log_issues = pd.concat(
+        [scan_log_issues.assign(needs_fix=True), overlaps], ignore_index=True
+    )
+    if not overlaps.empty:
+        to_fix = int(overlaps["needs_fix"].sum())
         print(
-            f"  ! {len(scan_log_issues)} scan-log cells rejected as malformed "
-            "(see scan_log_issues.csv)",
+            f"  ! {len(overlaps)} groups of scans listed under two phases "
+            f"({to_fix} on the same body site - see scan_log_issues.csv)",
+            file=sys.stderr,
+        )
+    print(f"  may={len(may_long)} october={len(october_long)} expected scan rows")
+    malformed = len(scan_log_issues) - len(overlaps)
+    if malformed:
+        print(
+            f"  ! {malformed} scan-log cells rejected as malformed (see scan_log_issues.csv)",
             file=sys.stderr,
         )
 

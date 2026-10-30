@@ -145,6 +145,7 @@ def validate(manifest_dir: Path) -> int:
     for name in (
         "manifest_build_errors.csv",
         "demographics_issues.csv",
+        "scan_log_issues.csv",
         "scan_number_collisions.csv",
     ):
         table = _read(manifest_dir / name)
@@ -156,6 +157,18 @@ def validate(manifest_dir: Path) -> int:
                     f"{table['scan_number'].nunique()} scan numbers are claimed by more than one "
                     "participant - matching on scan number alone is unsafe for these"
                 )
+            if name == "scan_log_issues.csv":
+                needs_fix = (
+                    table["needs_fix"].astype(str).str.lower() == "true"
+                    if "needs_fix" in table.columns
+                    else pd.Series(True, index=table.index)
+                )
+                print(f"needing a fix in the spreadsheet: {int(needs_fix.sum())}")
+                if needs_fix.any():
+                    warnings.append(
+                        f"{int(needs_fix.sum())} scan-log entries need correcting in the source "
+                        "spreadsheets (see scan_log_issues.csv, needs_fix=True)"
+                    )
             if name == "demographics_issues.csv":
                 print(table["issue"].value_counts().to_string())
                 open_issues = table[~table["issue"].str.startswith("resolved_")]

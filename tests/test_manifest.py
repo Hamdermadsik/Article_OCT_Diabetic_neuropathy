@@ -23,7 +23,7 @@ from manifest.excel_utils import (
     parse_dicom_filename,
 )
 from manifest.legacy_frames import group_consecutive_runs
-from manifest.matching import mark_duplicates, match_scans
+from manifest.matching import find_phase_overlaps, mark_duplicates, match_scans
 
 
 class TestParticipantIdNormalization:
@@ -197,6 +197,24 @@ class TestMatching:
 
         assert len(result) == 1
         assert result.iloc[0]["match_method"] == "unmatched"
+
+    def test_a_scan_in_two_phases_keeps_its_patient_but_not_a_guessed_phase(self):
+        # Real case: NB's Foot PORH cell "2200-2211" overlaps Foot Baseline
+        # 2200-2204. Taking the first listing would mislabel a PORH scan as
+        # Baseline and wrongly make it a segmentation candidate.
+        long_df = pd.DataFrame(
+            [
+                self._long_row(phase="Baseline", excel_column="Hand Baseline"),
+                self._long_row(phase="PORH", excel_column="Hand PORH"),
+            ]
+        )
+
+        result = match_scans(pd.DataFrame([self._file_row()]), long_df)
+
+        row = result.iloc[0]
+        assert row["participant_id"] == "HP-01-AB"
+        assert row["phase"] is None
+        assert "phase ambiguous" in row["match_detail"]
 
     def test_windows_copies_are_marked_as_duplicates(self):
         scans = pd.DataFrame(
@@ -403,3 +421,57 @@ class TestSessionAssignment:
         from manifest.build_manifest import session_for_date
 
         assert session_for_date(pd.NaT, "october_2020") == "october_2020"
+
+
+class TestPhaseOverlaps:
+    def _row(self, scan, column, area, phase="Baseline", date="2021-05-19"):
+        return {
+            "cohort": "may_2021",
+            "participant_id": "HP-26-NB",
+            "initials": "NB",
+            "group": "HP",
+            "date": pd.Timestamp(date),
+            "scan_number": scan,
+            "phase": phase,
+            "protocol_area": area,
+            "condition": "Regular",
+            "excel_column": column,
+        }
+
+    def test_same_site_overlap_needs_fixing(self):
+        long_df = pd.DataFrame(
+            [self._row(n, "Foot Baseline", "Foot") for n in range(2200, 2205)]
+            + [self._row(n, "Foot PORH", "Foot", "PORH") for n in range(2200, 2212)]
+        )
+
+        overlaps = find_phase_overlaps(long_df)
+
+        assert len(overlaps) == 1
+        assert bool(overlaps.iloc[0]["needs_fix"])
+        assert overlaps.iloc[0]["raw_value"] == "2200-2204"
+
+    def test_cross_site_overlap_is_informational(self):
+        # A file's body site tells Hand and Foot listings apart.
+        long_df = pd.DataFrame(
+            [self._row(1545, "Foot Baseline", "Foot"), self._row(1545, "Hand PORH.1", "Hand", "PORH")]
+        )
+
+        overlaps = find_phase_overlaps(long_df)
+
+        assert len(overlaps) == 1
+        assert not bool(overlaps.iloc[0]["needs_fix"])
+
+    def test_separate_visits_do_not_count_as_overlapping(self):
+        long_df = pd.DataFrame(
+            [
+                self._row(2300, "Foot Baseline", "Foot", date="2021-05-20"),
+                self._row(2300, "Foot PORH", "Foot", "PORH", date="2021-05-27"),
+            ]
+        )
+
+        assert find_phase_overlaps(long_df).empty
+
+    def test_no_overlaps_yields_an_empty_report(self):
+        long_df = pd.DataFrame([self._row(n, "Foot Baseline", "Foot") for n in range(5)])
+
+        assert find_phase_overlaps(long_df).empty
