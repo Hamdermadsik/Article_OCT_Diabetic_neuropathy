@@ -85,6 +85,20 @@ def frame_byte_size(rows: int, columns: int, samples_per_pixel: int, bits_alloca
     return rows * columns * samples_per_pixel * (bits_allocated // 8)
 
 
+def acquisition_datetime(dataset) -> str | None:
+    """When the acquisition was taken, as ISO ``YYYY-MM-DDTHH:MM:SS``.
+
+    The scanner clock is not externally synchronised, so this is reliable for
+    timing scans within a visit (e.g. seconds after cuff release), not across
+    machines.
+    """
+    date = str(getattr(dataset, "AcquisitionDate", "") or "").strip()
+    time = str(getattr(dataset, "AcquisitionTime", "") or "").strip().split(".")[0]
+    if len(date) != 8 or len(time) < 6 or not (date.isdigit() and time[:6].isdigit()):
+        return None
+    return f"{date[:4]}-{date[4:6]}-{date[6:]}T{time[:2]}:{time[2:4]}:{time[4:6]}"
+
+
 def read_dicom_header(path: Path) -> dict:
     """Read one acquisition's header and validate it against expectations.
 
@@ -101,6 +115,7 @@ def read_dicom_header(path: Path) -> dict:
         "samples_per_pixel": None,
         "bits_allocated": None,
         "transfer_syntax": None,
+        "acquisition_datetime": None,
         "pixel_data_offset": None,
         "matches_expected_geometry": False,
         "header_status": "ok",
@@ -122,6 +137,7 @@ def read_dicom_header(path: Path) -> dict:
         record["samples_per_pixel"] = int(dataset.SamplesPerPixel)
         record["bits_allocated"] = int(dataset.BitsAllocated)
         record["transfer_syntax"] = str(dataset.file_meta.TransferSyntaxUID)
+        record["acquisition_datetime"] = acquisition_datetime(dataset)
     except Exception as exc:  # noqa: BLE001
         record["header_status"] = "missing_geometry"
         record["header_detail"] = f"{type(exc).__name__}: {exc}"
