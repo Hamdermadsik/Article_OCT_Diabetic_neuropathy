@@ -22,24 +22,18 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import torch
-from skimage.transform import resize
 
-from model_utils import default_model_path, load_pytorch_model, project_root
-from papi import (
-    EN_FACE_SIZE,
-    SLAB_BOTTOM_PX,
-    SLAB_TOP_PX,
-    extract_flow,
-    identify_and_plot_dots,
-    import_dicom,
-    papillary_dermis_mip,
-    remove_epidermis_from_image,
-    test_model_on_sample_image,
+from model_utils import project_root
+from scan_analysis import (
+    PROFILE_OFFSETS,
+    add_slab_arguments,
+    analyse_scans,
+    draw_patients,
+    scan_metrics,
+    slab_from_args,
 )
 
 SITES = ("Hand", "Foot")
-PROFILE_OFFSETS = np.arange(-20, 101)
 
 
 def select_scans(
@@ -67,19 +61,7 @@ def select_scans(
     if not eligible:
         return usable.iloc[0:0]
 
-    group = patients.dropna(subset=["group"]).groupby("patient_id")["group"].first()
-    by_group = {
-        name: sorted(p for p in eligible if group.get(p, "unknown") == name)
-        for name in ("DP", "HP", "unknown")
-    }
-    rng = np.random.default_rng(seed)
-    for members in by_group.values():
-        rng.shuffle(members)
-    chosen = []
-    while len(chosen) < n_patients and any(by_group.values()):
-        for members in by_group.values():
-            if members and len(chosen) < n_patients:
-                chosen.append(members.pop())
+    chosen, group = draw_patients(eligible, patients, n_patients, seed)
 
     picks = []
     for patient_id in chosen:
@@ -99,86 +81,6 @@ def select_scans(
     return selected
 
 
-def resolve_path(row, fallback_dir: Path) -> Path | None:
-    """The scan on the drive, or a local copy of it if the drive is absent."""
-    for candidate in (Path(row["filepath"]), fallback_dir / row["filename"]):
-        try:
-            if candidate.exists():
-                return candidate
-        except OSError:
-            continue
-    return None
-
-
-def flow_depth_profile(volume, dej) -> np.ndarray:
-    """Mean flow at each depth offset from the DEJ, over detected columns."""
-    n_slices, height, width = volume.shape[:3]
-    totals = np.zeros(len(PROFILE_OFFSETS))
-    counts = np.zeros(len(PROFILE_OFFSETS))
-    columns = np.arange(width)
-    for i in range(n_slices):
-        flow = extract_flow(volume[i])
-        found = dej[i] >= 0
-        for k, offset in enumerate(PROFILE_OFFSETS):
-            rows = dej[i, found] + offset
-            inside = (rows >= 0) & (rows < height)
-            totals[k] += flow[rows[inside], columns[found][inside]].sum()
-            counts[k] += inside.sum()
-    return totals / np.maximum(counts, 1)
-
-
-def needs_processing(result_file: Path, slab: tuple[int, int], recompute: bool) -> bool:
-    """Whether a scan must be (re-)analysed rather than reusing saved results.
-
-    Results record the slab that produced them, so a different slab never
-    silently reuses them. Files from before the slab was recorded used the
-    original 0-15 px slab.
-    """
-    if recompute or not result_file.exists():
-        return True
-    with np.load(result_file) as saved:
-        saved_slab = tuple(saved["slab"]) if "slab" in saved else (0, 15)
-    return saved_slab != tuple(slab)
-
-
-def process_scan(row, path: Path, model, device, out_file: Path, slab: tuple[int, int]) -> None:
-    """Analyse one acquisition and save everything the report needs to disk.
-
-    Only small arrays are kept: holding a full volume (about 200 MB) per scan
-    until the report is drawn exhausts memory after a dozen scans.
-    """
-    volume, _, _ = import_dicom(path)
-    mip, dej, _ = papillary_dermis_mip(volume, model, device, slab=slab)
-    dots, _ = identify_and_plot_dots(
-        resize(mip, EN_FACE_SIZE, anti_aliasing=True, order=1),
-        min_size=30,
-        intensity_threshold=75,
-        circularity_threshold=0.45,
-        plot=False,
-    )
-    profile = flow_depth_profile(volume, dej)
-
-    middle = volume.shape[0] // 2
-    bscan = volume[middle].copy()  # a copy, so the volume itself can be freed
-    del volume
-    mask = test_model_on_sample_image(model, bscan, device)
-    _, upper, lower = remove_epidermis_from_image(bscan, mask)
-    found = mask.astype(bool).any(axis=0)
-
-    np.savez_compressed(
-        out_file,
-        mip=mip,
-        profile=profile,
-        bscan=bscan,
-        dej_line=lower[:, 0],
-        found=found,
-        blobs=len(dots),
-        epidermis_px=int(np.median((lower[:, 0] - upper[:, 0])[found])),
-        no_dej_pct=100 * float((dej < 0).mean()),
-        slab=np.array(slab),
-    )
-
-
 def summarise(row, result) -> dict:
     return {
         "patient_id": row["patient_id"],
@@ -186,11 +88,7 @@ def summarise(row, result) -> dict:
         "site": row["protocol_area"],
         "bodypart": row["bodypart"],
         "filename": row["filename"],
-        "blobs": int(result["blobs"]),
-        "mean_slab_flow": round(float(result["mip"].mean()), 2),
-        "flow_peak_px_below_dej": int(PROFILE_OFFSETS[np.argmax(result["profile"])]),
-        "epidermis_px": int(result["epidermis_px"]),
-        "no_dej_pct": round(float(result["no_dej_pct"]), 2),
+        **scan_metrics(result),
     }
 
 
@@ -231,81 +129,51 @@ def main() -> int:
     parser.add_argument("--phase", default="Baseline")
     parser.add_argument("--condition", default="Regular")
     parser.add_argument("--seed", type=int, default=0)
+    add_slab_arguments(parser)
     parser.add_argument(
-        "--slab-top",
-        type=int,
-        default=SLAB_TOP_PX,
-        help="slab start in px below the DEJ (negative = above it), e.g. --slab-top=-5",
-    )
-    parser.add_argument("--slab-bottom", type=int, default=SLAB_BOTTOM_PX)
-    parser.add_argument(
-        "--out-dir",
-        type=Path,
-        default=None,
-        help="default: outputs/baseline_sites/slab_<top>_<bottom>",
-    )
-    parser.add_argument(
-        "--recompute", action="store_true", help="re-analyse scans that already have saved results"
+        "--out-dir", type=Path, default=None, help="default: outputs/baseline_sites/slab_<top>_<bottom>"
     )
     args = parser.parse_args()
-    slab = (args.slab_top, args.slab_bottom)
-    if slab[0] >= slab[1]:
-        parser.error("--slab-top must be above (smaller than) --slab-bottom")
-    args.out_dir = args.out_dir or Path("outputs") / "baseline_sites" / f"slab_{slab[0]}_{slab[1]}"
+    slab = slab_from_args(parser, args)
+    out_dir = args.out_dir or Path("outputs") / "baseline_sites" / f"slab_{slab[0]}_{slab[1]}"
 
-    repo = project_root()
-    manifest = repo / "data" / "manifest"
-    scans = pd.read_csv(manifest / "scans.csv")
-    patients = pd.read_csv(manifest / "patients.csv")
+    manifest = project_root() / "data" / "manifest"
     selected = select_scans(
-        scans, patients, args.phase, args.condition, args.patients, args.seed
+        pd.read_csv(manifest / "scans.csv"),
+        pd.read_csv(manifest / "patients.csv"),
+        args.phase,
+        args.condition,
+        args.patients,
+        args.seed,
     )
     if selected.empty:
         print("No patients have usable scans on both a hand and a foot site for that phase.")
         return 1
-    args.out_dir.mkdir(parents=True, exist_ok=True)
     print(
         f"{selected['patient_id'].nunique()} patients, {len(selected)} scans selected | "
         f"slab {slab[0]}..{slab[1]} px relative to the DEJ"
     )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = load_pytorch_model(default_model_path(), device)
-
-    done_rows, done_files = [], []
-    for _, row in selected.iterrows():
-        result_file = args.out_dir / f"{Path(row['filename']).stem}.npz"
-        label = f"{row['patient_id']} {row['bodypart']}: {row['filename']}"
-        if not needs_processing(result_file, slab, args.recompute):
-            print(f"  {label} (already done)")
-        else:
-            path = resolve_path(row, repo / "data" / "dicom")
-            if path is None:
-                print(f"  ! {row['filename']}: not found - is the drive attached?")
-                continue
-            print(f"  {label}")
-            process_scan(row, path, model, device, result_file, slab)
-        done_rows.append(row)
-        done_files.append(result_file)
-
-    if not done_rows:
+    done = analyse_scans([row for _, row in selected.iterrows()], slab, args.recompute)
+    if not done:
         print("Nothing processed.")
         return 1
 
+    out_dir.mkdir(parents=True, exist_ok=True)
     summary = []
-    for row, result_file in zip(done_rows, done_files):
+    for row, result_file in done:
         with np.load(result_file) as result:
             summary.append(summarise(row, result))
     summary = pd.DataFrame(summary)
-    summary.to_csv(args.out_dir / "summary.csv", index=False)
-    draw_sheet(done_rows, done_files, args.out_dir / "comparison_sheet.png", slab)
+    summary.to_csv(out_dir / "summary.csv", index=False)
+    draw_sheet([r for r, _ in done], [f for _, f in done], out_dir / "comparison_sheet.png", slab)
 
     print()
     print(summary.drop(columns=["filename"]).to_string(index=False))
     print()
     print(summary.groupby("site")[["blobs", "mean_slab_flow", "flow_peak_px_below_dej", "epidermis_px"]]
           .median().to_string())
-    print(f"\nwritten to {args.out_dir}")
+    print(f"\nwritten to {out_dir}")
     return 0
 
 
