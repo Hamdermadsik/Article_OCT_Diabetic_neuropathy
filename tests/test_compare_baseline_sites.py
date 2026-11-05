@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from compare_baseline_sites import select_scans
@@ -99,3 +100,44 @@ def test_no_eligible_patients_yields_nothing():
     scans = pd.DataFrame([_scan("A", "Hand", 100)])
 
     assert select_scans(scans, _patients(("A", "HP"))).empty
+
+
+class TestResume:
+    def _saved(self, tmp_path, **arrays):
+        path = tmp_path / "scan.npz"
+        np.savez(path, mip=np.zeros((2, 2)), **arrays)
+        return path
+
+    def test_missing_results_are_processed(self, tmp_path):
+        from compare_baseline_sites import needs_processing
+
+        assert needs_processing(tmp_path / "absent.npz", (0, 15), recompute=False)
+
+    def test_results_from_the_same_slab_are_reused(self, tmp_path):
+        from compare_baseline_sites import needs_processing
+
+        path = self._saved(tmp_path, slab=np.array([-5, 20]))
+
+        assert not needs_processing(path, (-5, 20), recompute=False)
+
+    def test_results_from_a_different_slab_are_never_reused(self, tmp_path):
+        from compare_baseline_sites import needs_processing
+
+        path = self._saved(tmp_path, slab=np.array([0, 15]))
+
+        assert needs_processing(path, (-5, 20), recompute=False)
+
+    def test_results_saved_before_slabs_were_recorded_count_as_0_to_15(self, tmp_path):
+        from compare_baseline_sites import needs_processing
+
+        path = self._saved(tmp_path)
+
+        assert not needs_processing(path, (0, 15), recompute=False)
+        assert needs_processing(path, (-5, 20), recompute=False)
+
+    def test_recompute_forces_processing(self, tmp_path):
+        from compare_baseline_sites import needs_processing
+
+        path = self._saved(tmp_path, slab=np.array([0, 15]))
+
+        assert needs_processing(path, (0, 15), recompute=True)

@@ -127,14 +127,28 @@ def flow_depth_profile(volume, dej) -> np.ndarray:
     return totals / np.maximum(counts, 1)
 
 
-def process_scan(row, path: Path, model, device, out_file: Path) -> None:
+def needs_processing(result_file: Path, slab: tuple[int, int], recompute: bool) -> bool:
+    """Whether a scan must be (re-)analysed rather than reusing saved results.
+
+    Results record the slab that produced them, so a different slab never
+    silently reuses them. Files from before the slab was recorded used the
+    original 0-15 px slab.
+    """
+    if recompute or not result_file.exists():
+        return True
+    with np.load(result_file) as saved:
+        saved_slab = tuple(saved["slab"]) if "slab" in saved else (0, 15)
+    return saved_slab != tuple(slab)
+
+
+def process_scan(row, path: Path, model, device, out_file: Path, slab: tuple[int, int]) -> None:
     """Analyse one acquisition and save everything the report needs to disk.
 
     Only small arrays are kept: holding a full volume (about 200 MB) per scan
     until the report is drawn exhausts memory after a dozen scans.
     """
     volume, _, _ = import_dicom(path)
-    mip, dej, _ = papillary_dermis_mip(volume, model, device)
+    mip, dej, _ = papillary_dermis_mip(volume, model, device, slab=slab)
     dots, _ = identify_and_plot_dots(
         resize(mip, EN_FACE_SIZE, anti_aliasing=True, order=1),
         min_size=30,
@@ -161,6 +175,7 @@ def process_scan(row, path: Path, model, device, out_file: Path) -> None:
         blobs=len(dots),
         epidermis_px=int(np.median((lower[:, 0] - upper[:, 0])[found])),
         no_dej_pct=100 * float((dej < 0).mean()),
+        slab=np.array(slab),
     )
 
 
@@ -179,7 +194,7 @@ def summarise(row, result) -> dict:
     }
 
 
-def draw_sheet(rows, result_files, out_path: Path) -> None:
+def draw_sheet(rows, result_files, out_path: Path, slab: tuple[int, int]) -> None:
     """One row per scan: cross-section, MIP, and flow-vs-depth profile."""
     fig, axes = plt.subplots(
         len(rows), 3, figsize=(20, 3.4 * len(rows)), gridspec_kw={"width_ratios": [2.4, 1, 1]}
@@ -191,8 +206,9 @@ def draw_sheet(rows, result_files, out_path: Path) -> None:
             mip, profile, blobs = result["mip"], result["profile"], int(result["blobs"])
         cols = np.arange(bscan.shape[1])
         ax_b.imshow(bscan, aspect="auto")
-        ax_b.plot(cols[found], line[found] + SLAB_TOP_PX, "lime", lw=1)
-        ax_b.plot(cols[found], line[found] + SLAB_BOTTOM_PX, "m", lw=1)
+        ax_b.plot(cols[found], line[found], "lime", lw=1)
+        ax_b.plot(cols[found], line[found] + slab[0], "m", lw=0.8, ls="--")
+        ax_b.plot(cols[found], line[found] + slab[1], "m", lw=1)
         ax_b.set_ylim(260, 0)
         ax_b.set_title(
             f"{row['patient_id']} ({row['group']}) | {row['bodypart']} | middle slice", fontsize=9
@@ -202,7 +218,7 @@ def draw_sheet(rows, result_files, out_path: Path) -> None:
         ax_m.set_title(f"MIP - {blobs} blobs", fontsize=9)
         ax_m.axis("off")
         ax_p.plot(PROFILE_OFFSETS, profile, "r")
-        ax_p.axvspan(SLAB_TOP_PX, SLAB_BOTTOM_PX, color="m", alpha=0.15)
+        ax_p.axvspan(slab[0], slab[1], color="m", alpha=0.15)
         ax_p.set_title("flow vs depth below DEJ (px); shaded = slab", fontsize=9)
     plt.tight_layout()
     plt.savefig(out_path, dpi=70)
@@ -215,11 +231,27 @@ def main() -> int:
     parser.add_argument("--phase", default="Baseline")
     parser.add_argument("--condition", default="Regular")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--out-dir", type=Path, default=Path("outputs") / "baseline_sites")
+    parser.add_argument(
+        "--slab-top",
+        type=int,
+        default=SLAB_TOP_PX,
+        help="slab start in px below the DEJ (negative = above it), e.g. --slab-top=-5",
+    )
+    parser.add_argument("--slab-bottom", type=int, default=SLAB_BOTTOM_PX)
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="default: outputs/baseline_sites/slab_<top>_<bottom>",
+    )
     parser.add_argument(
         "--recompute", action="store_true", help="re-analyse scans that already have saved results"
     )
     args = parser.parse_args()
+    slab = (args.slab_top, args.slab_bottom)
+    if slab[0] >= slab[1]:
+        parser.error("--slab-top must be above (smaller than) --slab-bottom")
+    args.out_dir = args.out_dir or Path("outputs") / "baseline_sites" / f"slab_{slab[0]}_{slab[1]}"
 
     repo = project_root()
     manifest = repo / "data" / "manifest"
@@ -232,7 +264,10 @@ def main() -> int:
         print("No patients have usable scans on both a hand and a foot site for that phase.")
         return 1
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"{selected['patient_id'].nunique()} patients, {len(selected)} scans selected")
+    print(
+        f"{selected['patient_id'].nunique()} patients, {len(selected)} scans selected | "
+        f"slab {slab[0]}..{slab[1]} px relative to the DEJ"
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_pytorch_model(default_model_path(), device)
@@ -241,7 +276,7 @@ def main() -> int:
     for _, row in selected.iterrows():
         result_file = args.out_dir / f"{Path(row['filename']).stem}.npz"
         label = f"{row['patient_id']} {row['bodypart']}: {row['filename']}"
-        if result_file.exists() and not args.recompute:
+        if not needs_processing(result_file, slab, args.recompute):
             print(f"  {label} (already done)")
         else:
             path = resolve_path(row, repo / "data" / "dicom")
@@ -249,7 +284,7 @@ def main() -> int:
                 print(f"  ! {row['filename']}: not found - is the drive attached?")
                 continue
             print(f"  {label}")
-            process_scan(row, path, model, device, result_file)
+            process_scan(row, path, model, device, result_file, slab)
         done_rows.append(row)
         done_files.append(result_file)
 
@@ -263,7 +298,7 @@ def main() -> int:
             summary.append(summarise(row, result))
     summary = pd.DataFrame(summary)
     summary.to_csv(args.out_dir / "summary.csv", index=False)
-    draw_sheet(done_rows, done_files, args.out_dir / "comparison_sheet.png")
+    draw_sheet(done_rows, done_files, args.out_dir / "comparison_sheet.png", slab)
 
     print()
     print(summary.drop(columns=["filename"]).to_string(index=False))
