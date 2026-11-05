@@ -157,8 +157,12 @@ def identify_and_plot_dots(
     return dot_coords, circular_objects > 0
 
 
-# Depth window below the predicted DEJ, in pixels, that holds the papillary loops.
-SLAB_TOP_PX = 0
+# Depth window relative to the predicted DEJ, in pixels (negative = above it),
+# that holds the papillary loops. Starting 5 px above the line captures loops
+# in dermal papillae that rise above it: on 20 Baseline scans those 5 px raised
+# the MIP almost as much as 5 px extra at the bottom, from sparse bright spots.
+# Extending below 15 px mostly adds the deeper plexus, whose flow climbs there.
+SLAB_TOP_PX = -5
 SLAB_BOTTOM_PX = 15
 EN_FACE_SIZE = (1355, 1355)
 DEFAULT_DICOM = Path("data") / "dicom" / "RS_Right Hallux_L1076_S3070__26_05_2021.dcm"
