@@ -127,6 +127,88 @@ def flow_depth_profile(volume, dej) -> np.ndarray:
     return totals / np.maximum(counts, 1)
 
 
+def process_scan(row, path: Path, model, device, out_file: Path) -> None:
+    """Analyse one acquisition and save everything the report needs to disk.
+
+    Only small arrays are kept: holding a full volume (about 200 MB) per scan
+    until the report is drawn exhausts memory after a dozen scans.
+    """
+    volume, _, _ = import_dicom(path)
+    mip, dej, _ = papillary_dermis_mip(volume, model, device)
+    dots, _ = identify_and_plot_dots(
+        resize(mip, EN_FACE_SIZE, anti_aliasing=True, order=1),
+        min_size=30,
+        intensity_threshold=75,
+        circularity_threshold=0.45,
+        plot=False,
+    )
+    profile = flow_depth_profile(volume, dej)
+
+    middle = volume.shape[0] // 2
+    bscan = volume[middle].copy()  # a copy, so the volume itself can be freed
+    del volume
+    mask = test_model_on_sample_image(model, bscan, device)
+    _, upper, lower = remove_epidermis_from_image(bscan, mask)
+    found = mask.astype(bool).any(axis=0)
+
+    np.savez_compressed(
+        out_file,
+        mip=mip,
+        profile=profile,
+        bscan=bscan,
+        dej_line=lower[:, 0],
+        found=found,
+        blobs=len(dots),
+        epidermis_px=int(np.median((lower[:, 0] - upper[:, 0])[found])),
+        no_dej_pct=100 * float((dej < 0).mean()),
+    )
+
+
+def summarise(row, result) -> dict:
+    return {
+        "patient_id": row["patient_id"],
+        "group": row["group"],
+        "site": row["protocol_area"],
+        "bodypart": row["bodypart"],
+        "filename": row["filename"],
+        "blobs": int(result["blobs"]),
+        "mean_slab_flow": round(float(result["mip"].mean()), 2),
+        "flow_peak_px_below_dej": int(PROFILE_OFFSETS[np.argmax(result["profile"])]),
+        "epidermis_px": int(result["epidermis_px"]),
+        "no_dej_pct": round(float(result["no_dej_pct"]), 2),
+    }
+
+
+def draw_sheet(rows, result_files, out_path: Path) -> None:
+    """One row per scan: cross-section, MIP, and flow-vs-depth profile."""
+    fig, axes = plt.subplots(
+        len(rows), 3, figsize=(20, 3.4 * len(rows)), gridspec_kw={"width_ratios": [2.4, 1, 1]}
+    )
+    axes = np.atleast_2d(axes)
+    for row, result_file, (ax_b, ax_m, ax_p) in zip(rows, result_files, axes):
+        with np.load(result_file) as result:
+            bscan, line, found = result["bscan"], result["dej_line"], result["found"]
+            mip, profile, blobs = result["mip"], result["profile"], int(result["blobs"])
+        cols = np.arange(bscan.shape[1])
+        ax_b.imshow(bscan, aspect="auto")
+        ax_b.plot(cols[found], line[found] + SLAB_TOP_PX, "lime", lw=1)
+        ax_b.plot(cols[found], line[found] + SLAB_BOTTOM_PX, "m", lw=1)
+        ax_b.set_ylim(260, 0)
+        ax_b.set_title(
+            f"{row['patient_id']} ({row['group']}) | {row['bodypart']} | middle slice", fontsize=9
+        )
+        ax_b.axis("off")
+        ax_m.imshow(mip, cmap="gray", aspect="auto", vmax=np.percentile(mip, 99.5))
+        ax_m.set_title(f"MIP - {blobs} blobs", fontsize=9)
+        ax_m.axis("off")
+        ax_p.plot(PROFILE_OFFSETS, profile, "r")
+        ax_p.axvspan(SLAB_TOP_PX, SLAB_BOTTOM_PX, color="m", alpha=0.15)
+        ax_p.set_title("flow vs depth below DEJ (px); shaded = slab", fontsize=9)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=70)
+    plt.close(fig)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--patients", type=int, default=10)
@@ -134,6 +216,9 @@ def main() -> int:
     parser.add_argument("--condition", default="Regular")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out-dir", type=Path, default=Path("outputs") / "baseline_sites")
+    parser.add_argument(
+        "--recompute", action="store_true", help="re-analyse scans that already have saved results"
+    )
     args = parser.parse_args()
 
     repo = project_root()
@@ -152,70 +237,33 @@ def main() -> int:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_pytorch_model(default_model_path(), device)
 
-    results, panels = [], []
+    done_rows, done_files = [], []
     for _, row in selected.iterrows():
-        path = resolve_path(row, repo / "data" / "dicom")
-        if path is None:
-            print(f"  ! {row['filename']}: not found - is the drive attached?")
-            continue
-        print(f"  {row['patient_id']} {row['bodypart']}: {row['filename']}")
-        volume, _, _ = import_dicom(path)
-        mip, dej, _ = papillary_dermis_mip(volume, model, device)
-        mip_final = resize(mip, EN_FACE_SIZE, anti_aliasing=True, order=1)
-        dots, _ = identify_and_plot_dots(
-            mip_final, min_size=30, intensity_threshold=75, circularity_threshold=0.45, plot=False
-        )
-        profile = flow_depth_profile(volume, dej)
+        result_file = args.out_dir / f"{Path(row['filename']).stem}.npz"
+        label = f"{row['patient_id']} {row['bodypart']}: {row['filename']}"
+        if result_file.exists() and not args.recompute:
+            print(f"  {label} (already done)")
+        else:
+            path = resolve_path(row, repo / "data" / "dicom")
+            if path is None:
+                print(f"  ! {row['filename']}: not found - is the drive attached?")
+                continue
+            print(f"  {label}")
+            process_scan(row, path, model, device, result_file)
+        done_rows.append(row)
+        done_files.append(result_file)
 
-        middle = volume.shape[0] // 2
-        mask = test_model_on_sample_image(model, volume[middle], device)
-        _, upper, lower = remove_epidermis_from_image(volume[middle], mask)
-        found = mask.astype(bool).any(axis=0)
-
-        stem = Path(row["filename"]).stem
-        np.save(args.out_dir / f"{stem}_mip.npy", mip)
-        results.append(
-            {
-                "patient_id": row["patient_id"],
-                "group": row["group"],
-                "site": row["protocol_area"],
-                "bodypart": row["bodypart"],
-                "filename": row["filename"],
-                "blobs": len(dots),
-                "mean_slab_flow": round(float(mip.mean()), 2),
-                "flow_peak_px_below_dej": int(PROFILE_OFFSETS[np.argmax(profile)]),
-                "epidermis_px": int(np.median((lower[:, 0] - upper[:, 0])[found])),
-                "no_dej_pct": round(100 * float((dej < 0).mean()), 2),
-            }
-        )
-        panels.append((row, volume[middle], lower, found, mip_final, len(dots), profile))
-
-    if not results:
+    if not done_rows:
         print("Nothing processed.")
         return 1
 
-    summary = pd.DataFrame(results)
+    summary = []
+    for row, result_file in zip(done_rows, done_files):
+        with np.load(result_file) as result:
+            summary.append(summarise(row, result))
+    summary = pd.DataFrame(summary)
     summary.to_csv(args.out_dir / "summary.csv", index=False)
-
-    fig, axes = plt.subplots(len(panels), 3, figsize=(20, 3.4 * len(panels)),
-                             gridspec_kw={"width_ratios": [2.4, 1, 1]})
-    axes = np.atleast_2d(axes)
-    for (row, bscan, lower, found, mip_final, n_dots, profile), (ax_b, ax_m, ax_p) in zip(panels, axes):
-        cols = np.arange(bscan.shape[1])
-        ax_b.imshow(bscan, aspect="auto")
-        ax_b.plot(cols[found], lower[found, 0] + SLAB_TOP_PX, "lime", lw=1)
-        ax_b.plot(cols[found], lower[found, 0] + SLAB_BOTTOM_PX, "m", lw=1)
-        ax_b.set_ylim(260, 0)
-        ax_b.set_title(f"{row['patient_id']} ({row['group']}) | {row['bodypart']} | middle slice", fontsize=9)
-        ax_b.axis("off")
-        ax_m.imshow(mip_final, cmap="gray", vmax=np.percentile(mip_final, 99.5))
-        ax_m.set_title(f"MIP - {n_dots} blobs", fontsize=9)
-        ax_m.axis("off")
-        ax_p.plot(PROFILE_OFFSETS, profile, "r")
-        ax_p.axvspan(SLAB_TOP_PX, SLAB_BOTTOM_PX, color="m", alpha=0.15)
-        ax_p.set_title("flow vs depth below DEJ (px); shaded = slab", fontsize=9)
-    plt.tight_layout()
-    plt.savefig(args.out_dir / "comparison_sheet.png", dpi=70)
+    draw_sheet(done_rows, done_files, args.out_dir / "comparison_sheet.png")
 
     print()
     print(summary.drop(columns=["filename"]).to_string(index=False))

@@ -129,7 +129,11 @@ def identify_and_plot_dots(
 ):
     image_norm = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     binary_image = (image_norm > intensity_threshold).astype(np.uint8)
-    cleaned_image = morphology.remove_small_objects(binary_image.astype(bool), min_size=min_size)
+    # Equivalent to the deprecated min_size=min_size under scikit-image 0.26
+    # (verified), despite the deprecation note suggesting an off-by-one.
+    cleaned_image = morphology.remove_small_objects(
+        binary_image.astype(bool), max_size=min_size
+    )
     labeled_image = measure.label(cleaned_image)
     regions = measure.regionprops(labeled_image)
 
