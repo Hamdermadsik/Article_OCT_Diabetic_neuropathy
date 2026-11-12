@@ -22,4 +22,48 @@ identity:
   - {may: DP-13-DH, october: DH, same_person: true}  # age 66; missing from October log
   - {may: HP-49-MB, october: MB, same_person: false}
   - {may: HP-48-PM, october: PM, same_person: false}
-  - {may: HP-53-RM, october: RM, same_person: true}  # 26-year-old male; the 65 row is wrong
+  # May RM is 65; October RM is a different, 26-year-old man. Confirmed by the
+  # study's control list, which is in age order and only fits RM at 65.
+  - {may: HP-53-RM, october: RM, same_person: false}
+
+# Diabetic (DP) / healthy (HP) group for participants no sheet labels.
+participant_groups:
+  AR: HP
+  SS: HP
+
+# The article's comparison groups: type 2 diabetes vs controls (age-matched at
+# group level: mean 60.5 vs 60.4 years). Membership implies the DP/HP group.
+# DP-11-DC is diabetic but not in either list.
+study_groups:
+  T2DM:
+    - DP-02-DG
+    - DP-03-JR
+    - DP-04-RH
+    - DP-05-TA
+    - DP-06-JF
+    - DP-07-AC
+    - DP-10-JP
+    - DP-12-SR  # listed as "RS"
+    - DP-13-DH
+    - DP-14-AT
+    - DP-15-NL
+  Control:
+    - HP-56-MO
+    - CA
+    - HP-39-HB
+    - JA
+    - HP-55-CS
+    - HP-34-GM
+    - TL
+    - HP-53-RM
+    - HP-27-BB
+    - HP-60-PW
+    - HP-47-MJ
+
+# Participants left out of every analysis (their scans are marked excluded too).
+excluded_participants:
+  EA: no diabetic/healthy group in any sheet - cannot be placed in the study
+  HA: no diabetic/healthy group in any sheet - cannot be placed in the study
+  MA: no diabetic/healthy group in any sheet - cannot be placed in the study
+  PM: no diabetic/healthy group in any sheet - cannot be placed in the study
+  RM: no diabetic/healthy group in any sheet - cannot be placed in the study

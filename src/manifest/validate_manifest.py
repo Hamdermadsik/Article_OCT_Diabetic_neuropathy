@@ -73,6 +73,10 @@ def validate(manifest_dir: Path) -> int:
         if missing_demographics:
             warnings.append(f"{missing_demographics} patients have no age/sex on record")
         print(patients["identity_confidence"].value_counts().to_string())
+        if "excluded" in patients.columns:
+            excluded = patients[patients["excluded"].astype(str).str.lower() == "true"]
+            if not excluded.empty:
+                print(f"excluded by decision: {sorted(excluded['patient_id'].unique())}")
         undecided = patients[patients["identity_confidence"] == "unresolved_kept_separate"]
         if not undecided.empty:
             warnings.append(

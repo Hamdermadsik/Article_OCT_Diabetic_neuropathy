@@ -243,3 +243,131 @@ class TestDriveCache:
         files, _ = index_drive({"may_2021": tmp_path / "unplugged"}, cache)
 
         assert files.iloc[0]["protocol_area"] == "Hand"
+
+
+class TestDifferentPeopleSettleConflicts:
+    def test_the_row_matching_the_other_person_goes_to_them(self):
+        # Real case: HP-53-RM listed at 26 and 65; October RM is 26 and a
+        # different person, so the May RM is 65.
+        from manifest.decisions import apply_identity_decisions
+
+        participants = _participants(
+            ("may_2021", "HP-53-RM", None, None, "conflicting_rows"),
+            ("october_2020", "RM", "M", 26, "october_scan_log"),
+        )
+        sheet = _sheet(("HP-53-RM", "M", 26), ("HP-53-RM", "M", 65))
+
+        result, issues = apply_identity_decisions(
+            participants, [_same("HP-53-RM", "RM", False)], sheet
+        )
+
+        may = result[result["cohort"] == "may_2021"].iloc[0]
+        assert (may["sex"], may["age"]) == ("M", 65)
+        assert result["patient_id"].nunique() == 2
+        assert any(i["issue"] == "resolved_conflict" for i in issues)
+
+    def test_nothing_is_guessed_when_the_other_person_matches_neither_row(self):
+        from manifest.decisions import apply_identity_decisions
+
+        participants = _participants(
+            ("may_2021", "HP-53-RM", None, None, "conflicting_rows"),
+            ("october_2020", "RM", "M", 40, "october_scan_log"),
+        )
+        sheet = _sheet(("HP-53-RM", "M", 26), ("HP-53-RM", "M", 65))
+
+        result, _ = apply_identity_decisions(participants, [_same("HP-53-RM", "RM", False)], sheet)
+
+        assert pd.isna(result[result["cohort"] == "may_2021"].iloc[0]["age"])
+
+
+class TestGroupDecisions:
+    def _people(self):
+        frame = _participants(
+            ("may_2021", "DP-02-DG", "M", 43, "demographics_sheet"),
+            ("october_2020", "CA", "F", 46, "october_scan_log"),
+            ("october_2020", "AR", "F", 42, "october_scan_log"),
+            ("may_2021", "DP-13-DH", "M", 66, "demographics_sheet"),
+            ("october_2020", "DH", "M", 66, "from_same_person_may_2021"),
+        )
+        frame["patient_id"] = ["MAY-DP-02-DG", "OCT-CA", "OCT-AR", "DP-13-DH", "DP-13-DH"]
+        frame.loc[frame["participant_id"] == "DH", "group"] = None
+        return frame
+
+    def test_recorded_groups_fill_missing_ones(self):
+        from manifest.decisions import apply_group_decisions
+
+        result, issues = apply_group_decisions(self._people(), {"AR": "HP"}, {})
+
+        assert result.set_index("participant_id").loc["AR", "group"] == "HP"
+        assert issues == []
+
+    def test_study_groups_apply_per_patient_and_imply_the_group(self):
+        from manifest.decisions import apply_group_decisions
+
+        result, _ = apply_group_decisions(
+            self._people(), {}, {"T2DM": ["DP-13-DH"], "Control": ["CA"]}
+        )
+        by_id = result.set_index("participant_id")
+
+        # DH was scanned in both sessions; both records belong to the study group.
+        assert by_id.loc["DP-13-DH", "study_group"] == "T2DM"
+        assert by_id.loc["DH", "study_group"] == "T2DM"
+        assert by_id.loc["DH", "group"] == "DP"
+        assert (by_id.loc["CA", "study_group"], by_id.loc["CA", "group"]) == ("Control", "HP")
+        assert pd.isna(by_id.loc["AR", "study_group"])
+
+    def test_a_contradiction_is_reported_not_overwritten(self):
+        from manifest.decisions import apply_group_decisions
+
+        result, issues = apply_group_decisions(self._people(), {}, {"Control": ["DP-02-DG"]})
+
+        assert result.set_index("participant_id").loc["DP-02-DG", "group"] == "DP"
+        assert [i["issue"] for i in issues] == ["group_contradiction"]
+
+    def test_unknown_members_are_reported(self):
+        from manifest.decisions import apply_group_decisions
+
+        _, issues = apply_group_decisions(self._people(), {"ZZ": "HP"}, {"Control": ["XX"]})
+
+        assert [i["issue"] for i in issues] == ["decision_unmatched", "decision_unmatched"]
+
+
+class TestExclusions:
+    def test_excluded_participants_are_marked_with_a_reason(self):
+        from manifest.decisions import apply_exclusions
+
+        people = _participants(
+            ("october_2020", "EA", "M", 15, "october_scan_log"),
+            ("october_2020", "CA", "F", 46, "october_scan_log"),
+        )
+        people["patient_id"] = ["OCT-EA", "OCT-CA"]
+
+        result, issues = apply_exclusions(people, {"EA": "no group recorded"})
+
+        by_id = result.set_index("participant_id")
+        assert bool(by_id.loc["EA", "excluded"]) and by_id.loc["EA", "exclusion_reason"] == "no group recorded"
+        assert not bool(by_id.loc["CA", "excluded"])
+        assert issues == []
+
+    def test_exclusion_covers_both_sessions_of_one_patient(self):
+        from manifest.decisions import apply_exclusions
+
+        people = _participants(
+            ("may_2021", "HP-20-CH", "M", 46, "demographics_sheet"),
+            ("october_2020", "CH", "M", 46, "october_scan_log"),
+        )
+        people["patient_id"] = ["HP-20-CH", "HP-20-CH"]
+
+        result, _ = apply_exclusions(people, {"CH": "test"})
+
+        assert result["excluded"].all()
+
+    def test_an_unknown_exclusion_is_reported(self):
+        from manifest.decisions import apply_exclusions
+
+        people = _participants(("october_2020", "CA", "F", 46, "october_scan_log"))
+        people["patient_id"] = ["OCT-CA"]
+
+        _, issues = apply_exclusions(people, {"ZZ": "test"})
+
+        assert [i["issue"] for i in issues] == ["decision_unmatched"]

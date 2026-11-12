@@ -29,7 +29,9 @@ if __package__ in (None, ""):  # allow `python src/manifest/build_manifest.py`
     )
     from manifest.decisions import (
         apply_aliases,
+        apply_exclusions,
         apply_file_initials,
+        apply_group_decisions,
         apply_identity_decisions,
         decision_label,
         drop_superseded_issues,
@@ -58,7 +60,9 @@ else:
     )
     from .decisions import (
         apply_aliases,
+        apply_exclusions,
         apply_file_initials,
+        apply_group_decisions,
         apply_identity_decisions,
         decision_label,
         drop_superseded_issues,
@@ -177,7 +181,7 @@ def index_drive(roots: dict[str, Path], cache_path: Path) -> tuple[pd.DataFrame,
     return pd.DataFrame(records), pd.DataFrame(unparsed)
 
 
-def exclusion_reason(scan) -> str | None:
+def exclusion_reason(scan, excluded_patients=frozenset()) -> str | None:
     """Why a scan cannot be used, or None if it can.
 
     One column for every reason, so downstream analysis filters on a single
@@ -187,6 +191,8 @@ def exclusion_reason(scan) -> str | None:
         return "unreadable_file"
     if pd.notna(scan["is_duplicate_of"]):
         return "duplicate_file"
+    if scan.get("patient_id") in excluded_patients:
+        return "patient_excluded"
     if scan["match_method"] == "ambiguous":
         return "patient_ambiguous"
     if scan["match_method"] == "unmatched":
@@ -207,6 +213,9 @@ PATIENT_COLUMNS = [
     "age",
     "demographics_source",
     "identity_confidence",
+    "study_group",
+    "excluded",
+    "exclusion_reason",
 ]
 
 
@@ -275,6 +284,14 @@ def main() -> int:
     participants, identity_issues = apply_identity_decisions(
         participants, decisions.identity, demographics_sheet
     )
+    participants, group_issues = apply_group_decisions(
+        participants, decisions.participant_groups, decisions.study_groups
+    )
+    participants, exclusion_issues = apply_exclusions(participants, decisions.excluded_participants)
+    identity_issues = identity_issues + group_issues + exclusion_issues
+    excluded_patients = set(participants.loc[participants["excluded"], "patient_id"])
+    if excluded_patients:
+        print(f"  {len(excluded_patients)} patients excluded by decision: {sorted(excluded_patients)}")
     demographics_issues = drop_superseded_issues(
         demographics_issues, alias_issues + identity_issues
     )
@@ -295,7 +312,12 @@ def main() -> int:
         f"{confidence.get('unresolved_kept_separate', 0) // 2} undecided"
     )
     for issue in alias_issues + identity_issues:
-        if issue["issue"] in {"decision_unmatched", "alias_initials_shared", "same_person_disagrees"}:
+        if issue["issue"] in {
+            "decision_unmatched",
+            "alias_initials_shared",
+            "same_person_disagrees",
+            "group_contradiction",
+        }:
             print(f"  ! {issue['detail']}", file=sys.stderr)
 
     print("Indexing acquisition drive...")
@@ -322,7 +344,9 @@ def main() -> int:
         scans["patient_id"] = [
             patient_of.get((row.cohort, row.participant_id)) for row in scans.itertuples()
         ]
-        scans["exclusion_reason"] = [exclusion_reason(row) for _, row in scans.iterrows()]
+        scans["exclusion_reason"] = [
+            exclusion_reason(row, excluded_patients) for _, row in scans.iterrows()
+        ]
         scans["excluded"] = scans["exclusion_reason"].notna()
         # Baseline/Regular acquisitions are the segmentation-relevant ones;
         # Isc/PORH/Flavanol revisit the same anatomy under different perfusion.

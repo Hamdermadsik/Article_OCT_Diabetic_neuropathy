@@ -357,7 +357,43 @@ class TestDemographics:
         participants, issues = resolve_demographics(log, sheet, _october(("GW", None, 22)))
 
         assert participants.iloc[0]["sex"] == "F"
-        assert list(issues["issue"]) == ["sex_filled_from_sheet"]
+        assert "resolved_sex_from_sheet" in list(issues["issue"])
+
+    def test_october_group_comes_from_the_matching_sheet_row(self):
+        # Real case: October's log has bare "AF"; the sheet has HP-08AF, M/33.
+        log = _scan_log(("october_2020", "AF"))
+        sheet = _sheet(("HP-08-AF", "M", 33))
+
+        participants, issues = resolve_demographics(log, sheet, _october(("AF", "M", 33)))
+
+        assert participants.iloc[0]["group"] == "HP"
+        assert list(issues["issue"]) == ["resolved_group_from_sheet"]
+
+    def test_october_group_is_not_taken_when_ages_disagree(self):
+        log = _scan_log(("october_2020", "AF"))
+        sheet = _sheet(("HP-08-AF", "M", 70))
+
+        participants, _ = resolve_demographics(log, sheet, _october(("AF", "M", 33)))
+
+        assert pd.isna(participants.iloc[0]["group"])
+
+    def test_october_group_is_not_taken_when_sex_contradicts(self):
+        # Real case: October's PM is M/27 in the log, but HP-09PM is F/27.
+        log = _scan_log(("october_2020", "PM"))
+        sheet = _sheet(("HP-09-PM", "F", 27))
+
+        participants, _ = resolve_demographics(log, sheet, _october(("PM", "M", 27)))
+
+        assert pd.isna(participants.iloc[0]["group"])
+
+    def test_bare_initials_sheet_rows_give_no_group(self):
+        # Real case: AR, CA, JA, SS, TL appear in the sheet without HP/DP.
+        log = _scan_log(("october_2020", "AR"))
+        sheet = _sheet(("AR", "F", 42))
+
+        participants, _ = resolve_demographics(log, sheet, _october(("AR", "F", 42)))
+
+        assert pd.isna(participants.iloc[0]["group"])
 
     def test_missing_october_sex_is_not_filled_when_ages_disagree(self):
         log = _scan_log(("october_2020", "GW"))
@@ -552,3 +588,15 @@ class TestExclusion:
         assert exclusion_reason(self._scan(is_duplicate_of="x")) == "duplicate_file"
         assert exclusion_reason(self._scan(match_method="ambiguous")) == "patient_ambiguous"
         assert exclusion_reason(self._scan(match_method="unmatched")) == "no_scan_log_entry"
+
+
+def test_scans_of_excluded_patients_are_excluded():
+    from manifest.build_manifest import exclusion_reason
+
+    scan = pd.Series(
+        {"header_status": "ok", "is_duplicate_of": None, "match_method": "exact",
+         "phase_ambiguous": False, "patient_id": "OCT-EA"}
+    )
+
+    assert exclusion_reason(scan, {"OCT-EA"}) == "patient_excluded"
+    assert exclusion_reason(scan) is None

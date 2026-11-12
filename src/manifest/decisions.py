@@ -25,10 +25,17 @@ from .excel_utils import extract_group, extract_initials, normalize_participant_
 COHORT_PREFIX = {MAY_COHORT: "MAY", OCTOBER_COHORT: "OCT"}
 
 
+# Recorded study groups imply the diabetic/healthy group of their members.
+STUDY_GROUP_IMPLIES = {"T2DM": "DP", "Control": "HP"}
+
+
 @dataclass
 class Decisions:
     aliases: dict[str, str] = field(default_factory=dict)
     identity: list[dict] = field(default_factory=list)
+    participant_groups: dict[str, str] = field(default_factory=dict)
+    study_groups: dict[str, list[str]] = field(default_factory=dict)
+    excluded_participants: dict[str, str] = field(default_factory=dict)
 
 
 def load_decisions(path: Path) -> Decisions:
@@ -49,7 +56,25 @@ def load_decisions(path: Path) -> Decisions:
         }
         for entry in raw.get("identity") or []
     ]
-    return Decisions(aliases=aliases, identity=identity)
+    participant_groups = {
+        normalize_participant_id(pid): str(group).strip().upper()
+        for pid, group in (raw.get("participant_groups") or {}).items()
+    }
+    study_groups = {
+        str(name): [normalize_participant_id(pid) for pid in members or []]
+        for name, members in (raw.get("study_groups") or {}).items()
+    }
+    excluded_participants = {
+        normalize_participant_id(pid): str(reason).strip()
+        for pid, reason in (raw.get("excluded_participants") or {}).items()
+    }
+    return Decisions(
+        aliases=aliases,
+        identity=identity,
+        participant_groups=participant_groups,
+        study_groups=study_groups,
+        excluded_participants=excluded_participants,
+    )
 
 
 def canonical_patient_id(cohort: str, participant_id: str) -> str:
@@ -246,6 +271,98 @@ def apply_identity_decisions(
             participants.loc[[may_idx, october_idx], "identity_confidence"] = (
                 "confirmed_different_people"
             )
+            _settle_conflict_by_elimination(participants, may_idx, october_idx, sheet, issues)
+
+    return participants, issues
+
+
+def _settle_conflict_by_elimination(participants, may_idx, october_idx, sheet, issues) -> None:
+    """Settle a May record's conflicting sheet rows using a *different* person.
+
+    When the demographics sheet lists one May ID twice with different values
+    and one of those rows matches the October participant now confirmed to be
+    someone else, that row belongs to the October person -- so the May record
+    takes the other one. Real case: HP-53-RM listed at 26 and 65, October RM is
+    26 and a different person, so the May RM is 65.
+    """
+    may = participants.loc[may_idx]
+    october = participants.loc[october_idx]
+    if sheet is None or may["demographics_source"] != "conflicting_rows":
+        return
+    if not (_present(october["age"]) and _present(october["sex"])):
+        return
+
+    candidates = sheet[sheet["participant_id"] == may["participant_id"]]
+    matches_october = (
+        candidates["age"].sub(october["age"]).abs().le(AGE_TOLERANCE_YEARS)
+        & (candidates["sex"] == october["sex"])
+    )
+    if matches_october.sum() != 1 or (~matches_october).sum() != 1:
+        return
+
+    kept = candidates[~matches_october].iloc[0]
+    given_away = candidates[matches_october].iloc[0]
+    participants.loc[may_idx, ["sex", "age"]] = [kept["sex"], kept["age"]]
+    participants.loc[may_idx, "demographics_source"] = "sheet_row_by_elimination"
+    issues.append(
+        _issue(MAY_COHORT, may["participant_id"], "resolved_conflict",
+               f"different person from October {october['participant_id']}, who matches the "
+               f"{given_away['sex']}/{given_away['age']:g} row; kept {kept['sex']}/{kept['age']:g}")
+    )
+
+
+def apply_group_decisions(
+    participants: pd.DataFrame,
+    participant_groups: dict[str, str],
+    study_groups: dict[str, list[str]],
+) -> tuple[pd.DataFrame, list[dict]]:
+    """Fill recorded diabetic/healthy groups and assign study groups.
+
+    Study groups apply per patient, so someone scanned in both sessions is in
+    the group in both. Membership also implies the group (Control -> HP,
+    T2DM -> DP) where none was recorded; a contradiction is reported, never
+    overwritten.
+    """
+    participants = participants.copy()
+    participants["study_group"] = None
+    issues: list[dict] = []
+
+    def set_group(rows, group, reason):
+        for idx in rows:
+            current = participants.at[idx, "group"]
+            if not _present(current):
+                participants.at[idx, "group"] = group
+            elif current != group:
+                pid = participants.at[idx, "participant_id"]
+                issues.append(
+                    _issue(participants.at[idx, "cohort"], pid, "group_contradiction",
+                           f"recorded as {current}, but {reason} says {group}")
+                )
+
+    for participant_id, group in participant_groups.items():
+        rows = participants.index[participants["participant_id"] == participant_id]
+        if rows.empty:
+            issues.append(
+                _issue(None, participant_id, "decision_unmatched",
+                       f"group for {participant_id} skipped: no such participant")
+            )
+            continue
+        set_group(rows, group, "configs/manifest_decisions.yaml")
+
+    for study_group, members in study_groups.items():
+        for participant_id in members:
+            matched = participants["participant_id"] == participant_id
+            if not matched.any():
+                issues.append(
+                    _issue(None, participant_id, "decision_unmatched",
+                           f"{study_group} member {participant_id} skipped: no such participant")
+                )
+                continue
+            patient_ids = set(participants.loc[matched, "patient_id"])
+            rows = participants.index[participants["patient_id"].isin(patient_ids)]
+            participants.loc[rows, "study_group"] = study_group
+            if study_group in STUDY_GROUP_IMPLIES:
+                set_group(rows, STUDY_GROUP_IMPLIES[study_group], f"study group {study_group}")
 
     return participants, issues
 
@@ -276,3 +393,29 @@ def drop_superseded_issues(issues: pd.DataFrame, resolutions: list[dict]) -> pd.
     ) if not issues.empty else pd.Series(dtype=bool)
     kept = issues[~superseded] if not issues.empty else issues
     return pd.concat([kept, pd.DataFrame(resolutions, columns=ISSUE_COLUMNS)], ignore_index=True)
+
+
+def apply_exclusions(
+    participants: pd.DataFrame, excluded: dict[str, str]
+) -> tuple[pd.DataFrame, list[dict]]:
+    """Mark participants deliberately left out of every analysis.
+
+    Exclusion applies to the whole patient, so a person scanned in both
+    sessions is excluded in both.
+    """
+    participants = participants.copy()
+    participants["excluded"] = False
+    participants["exclusion_reason"] = None
+    issues = []
+    for participant_id, reason in excluded.items():
+        matched = participants["participant_id"] == participant_id
+        if not matched.any():
+            issues.append(
+                _issue(None, participant_id, "decision_unmatched",
+                       f"exclusion of {participant_id} skipped: no such participant")
+            )
+            continue
+        rows = participants["patient_id"].isin(set(participants.loc[matched, "patient_id"]))
+        participants.loc[rows, "excluded"] = True
+        participants.loc[rows, "exclusion_reason"] = reason
+    return participants, issues

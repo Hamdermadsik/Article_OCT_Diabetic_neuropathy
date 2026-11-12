@@ -9,8 +9,9 @@ Two sources exist:
 
 Session membership therefore comes from the scan logs, never from the
 demographics sheet. May participants take their demographics from the sheet
-(matched on full participant ID); October participants take theirs from
-Sheet1, and the sheet is only used to cross-check them.
+(matched on full participant ID); October participants take sex and age from
+Sheet1, and from the sheet take the diabetic/healthy group Sheet1 never records
+(plus any sex Sheet1 left blank), matched on initials and age.
 
 Where the sources are ambiguous or disagree, nothing is picked silently: the
 value is left blank and the problem is written to the issues report.
@@ -310,6 +311,28 @@ def resolve_october_demographics(
             ages_known = _present(other["age"]) and _present(record["age"])
             ages_agree = ages_known and abs(other["age"] - record["age"]) <= AGE_TOLERANCE_YEARS
 
+            sex_contradicts = (
+                _present(other["sex"]) and _present(record["sex"]) and other["sex"] != record["sex"]
+            )
+            if record["group"] is None and _present(other["group"]) and ages_agree and not sex_contradicts:
+                # October's log writes bare initials, so it never records the
+                # diabetic/healthy group. The demographics sheet does (e.g.
+                # "HP-08AF"); take it from the one unclaimed row that matches on
+                # initials and age without contradicting on sex.
+                record["group"] = other["group"]
+                issues.append(
+                    {
+                        "cohort": OCTOBER_COHORT,
+                        "participant_id": participant.participant_id,
+                        "initials": participant.initials,
+                        "issue": "resolved_group_from_sheet",
+                        "detail": (
+                            f"group {other['group']} from demographics sheet row "
+                            f"{other['participant_id']} (same initials and age)"
+                        ),
+                    }
+                )
+
             if not _present(record["sex"]) and _present(other["sex"]) and ages_agree:
                 # The October log left sex blank. The only unclaimed sheet row
                 # with these initials has the same age, so take sex from it --
@@ -321,7 +344,7 @@ def resolve_october_demographics(
                         "cohort": OCTOBER_COHORT,
                         "participant_id": participant.participant_id,
                         "initials": participant.initials,
-                        "issue": "sex_filled_from_sheet",
+                        "issue": "resolved_sex_from_sheet",
                         "detail": (
                             f"October log has no sex; took {other['sex']} from demographics "
                             f"sheet row {other['participant_id']} (same initials and age)"
