@@ -8,6 +8,7 @@ from skimage import measure, morphology
 import math
 from pathlib import Path
 
+from depth_slabs import extract_dej, project_slab
 from image_utils import resize_for_model, restore_from_model, structural_image
 from model_utils import (
     DEFAULT_TARGET_SIZE,
@@ -199,6 +200,137 @@ def papillary_dermis_mip(volume, model, device, slab=(SLAB_TOP_PX, SLAB_BOTTOM_P
     return mip, dej, tortuosities
 
 
+def depth_slab_mips(volume, model, device, margin_px, thickness_px):
+    """Four DEJ-relative projections from RGB OCTA, at native sampling.
+
+    This exploratory path uses pixel offsets, not calibrated physical depths.
+    MIP axes are (layer, B-scan, lateral column). Segmentation runs once per
+    B-scan. The above-DEJ layer is a control, not a capillary-loop layer.
+    """
+    for value in (margin_px, thickness_px):
+        if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
+            raise ValueError("margin and thickness must be integer pixels")
+    if margin_px < 0 or thickness_px <= 0:
+        raise ValueError("margin must be >= 0 and thickness must be > 0")
+    if volume.ndim != 4 or volume.shape[-1] != 3 or 0 in volume.shape:
+        raise ValueError("depth-slabs mode requires an RGB OCTA volume (N, H, W, 3)")
+
+    m, t = int(margin_px), int(thickness_px)
+    offsets = np.array([[-m - t, -m], [m, m + t], [m + t, m + 2*t], [m + 2*t, m + 3*t]])
+    names = np.array(["above_dej_control", "superficial", "middle", "deep"])
+    n_slices, _, width, _ = volume.shape
+    mips = np.full((4, n_slices, width), np.nan)
+    valid = np.zeros(mips.shape, dtype=bool)
+    dej = np.full((n_slices, width), np.nan)
+    surface = np.full_like(dej, np.nan)
+
+    for i, bscan in enumerate(volume):
+        mask = test_model_on_sample_image(model, bscan, device)
+        if mask.shape != bscan.shape[:2]:
+            raise ValueError("segmentation shape does not match the B-scan")
+        dej[i], surface[i], columns = extract_dej(mask)
+        flow = extract_flow(bscan)
+        for layer, (start, stop) in enumerate(offsets):
+            mips[layer, i], valid[layer, i] = project_slab(
+                flow, dej[i], columns, start, stop, surface_px=surface[i]
+            )
+
+    return {
+        "mips": mips,
+        "valid": valid,
+        "common_valid": valid.all(axis=0),
+        "common_dermal_valid": valid[1:].all(axis=0),
+        "dej_px": dej,
+        "surface_px": surface,
+        "slab_names": names,
+        "offsets_px": offsets,
+    }
+
+
+def save_depth_slab_outputs(result, volume, source_path, out_dir, spacing):
+    """Save quantitative arrays separately from shared-scale QC figures."""
+    import json
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    prefix = out_dir / f"{Path(source_path).stem}_depth_slabs"
+    np.savez_compressed(f"{prefix}.npz", **result)
+    metadata = {
+        "source_path": str(Path(source_path).resolve()),
+        "volume_shape": list(volume.shape),
+        "reported_sitk_spacing_xyz": list(spacing),
+        "physical_spacing_verified": False,
+        "boundary_convention": "pixel edges; [DEJ + start, DEJ + stop)",
+        "flow_source": "max(red - green, 0); RGB overlay, not blood velocity",
+        "slabs_px": dict(zip(result["slab_names"].tolist(), result["offsets_px"].tolist())),
+        "valid_fraction": dict(zip(result["slab_names"].tolist(), result["valid"].mean(axis=(1, 2)).tolist())),
+        "common_valid_fraction": float(result["common_valid"].mean()),
+        "common_dermal_valid_fraction": float(result["common_dermal_valid"].mean()),
+    }
+    with Path(f"{prefix}.json").open("w") as handle:
+        json.dump(metadata, handle, indent=2)
+
+    finite = result["mips"][np.isfinite(result["mips"])]
+    vmax = max(float(finite.max()), 1.0) if finite.size else 1.0
+    cmap = plt.get_cmap("gray").copy()
+    cmap.set_bad("#d977b0")
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
+    for layer, ax in enumerate(axes.flat):
+        start, stop = result["offsets_px"][layer]
+        im = ax.imshow(result["mips"][layer], cmap=cmap, vmin=0, vmax=vmax,
+                       interpolation="nearest", aspect="auto")
+        ax.set_title(f"{result['slab_names'][layer]} [{start}, {stop}) px\n"
+                     f"valid: {result['valid'][layer].mean():.1%}")
+        ax.set_xlabel("Lateral column (pixels)")
+        ax.set_ylabel("B-scan index")
+    fig.colorbar(im, ax=axes.ravel().tolist(), label="RGB red - green (shared scale)")
+    fig.suptitle("Depth slabs: pixel-index view, not physical aspect ratio; pink = invalid")
+    fig.savefig(f"{prefix}_mips.png", dpi=150)
+    plt.close(fig)
+
+    save_depth_slab_boundaries(result, volume, f"{prefix}_boundaries.png")
+
+
+def save_depth_slab_boundaries(result, volume, output_path):
+    """Compare B-scans with short left-edge markers and full slab overlays."""
+    indices = np.unique([0, len(volume) // 2, len(volume) - 1])
+    fig, axes = plt.subplots(len(indices), 2, figsize=(20, 4 * len(indices)),
+                             squeeze=False, sharex=True, sharey=True,
+                             constrained_layout=True)
+    colors = ["#e377c2", "#2ca02c", "#17becf", "#ff7f0e"]
+    x = np.arange(volume.shape[2])
+    marker_width = min(volume.shape[2], max(2, int(np.ceil(volume.shape[2] * 0.05))))
+    for (original_ax, ax), i in zip(axes, indices):
+        # Pixel-edge coordinates align with extract_dej's half-open boundaries.
+        rgb = volume[i]
+        if rgb.dtype == np.uint16:
+            rgb = rgb.astype(float) / 65535.0
+        for panel in (original_ax, ax):
+            panel.imshow(rgb, extent=(-0.5, volume.shape[2] - 0.5, volume.shape[1], 0),
+                         aspect="auto", interpolation="nearest")
+            panel.set_ylim(volume.shape[1], 0)
+            panel.set_xlabel("Lateral column (pixels)")
+        original_ax.set_ylabel("Depth (pixel edges)")
+        original_ax.set_title(f"B-scan {i}: boundaries at left edge only")
+        original_ax.plot(x[:marker_width], result["surface_px"][i, :marker_width],
+                         color="yellow")
+        original_ax.plot(x[:marker_width], result["dej_px"][i, :marker_width],
+                         color="white")
+        ax.plot(x, result["surface_px"][i], color="yellow", label="Surface")
+        ax.plot(x, result["dej_px"][i], color="white", label="DEJ")
+        for layer, (start, stop) in enumerate(result["offsets_px"]):
+            boundary = np.where(result["valid"][layer, i], result["dej_px"][i], np.nan)
+            for offset in (start, stop):
+                original_ax.plot(x[:marker_width], boundary[:marker_width] + offset,
+                                 color=colors[layer], linewidth=1)
+            ax.fill_between(x, boundary + start, boundary + stop, color=colors[layer],
+                            alpha=0.25, label=result["slab_names"][layer])
+        ax.set_title(f"B-scan {i}: predicted boundaries and depth intervals")
+        ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1))
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
 def main():
     import argparse
 
@@ -207,17 +339,34 @@ def main():
         "dicoms", nargs="*", type=Path, help=f"RGB OCTA DICOM volumes (default: {DEFAULT_DICOM})"
     )
     parser.add_argument("--out-dir", type=Path, default=Path.cwd())
+    parser.add_argument("--model", type=Path, default=default_model_path())
+    parser.add_argument("--depth-slabs", action="store_true", help="Experimental four-layer QC; no loop counting")
+    parser.add_argument("--margin-px", type=int, help="Nonnegative gap from DEJ, in pixels")
+    parser.add_argument("--thickness-px", type=int, help="Positive layer thickness, in pixels")
     args = parser.parse_args()
+    if args.depth_slabs:
+        if args.margin_px is None or args.thickness_px is None:
+            parser.error("--depth-slabs requires --margin-px and --thickness-px")
+        if args.margin_px < 0 or args.thickness_px <= 0:
+            parser.error("--margin-px must be >= 0 and --thickness-px must be > 0")
+    elif args.margin_px is not None or args.thickness_px is not None:
+        parser.error("pixel depth arguments require --depth-slabs")
     dicoms = args.dicoms or [project_root() / DEFAULT_DICOM]
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-    model = load_pytorch_model(default_model_path(), device)
+    model = load_pytorch_model(args.model, device)
 
     for path in dicoms:
-        volume, _, _ = import_dicom(path)
+        volume, spacing, _ = import_dicom(path)
         print(f"{path.name}: processing {volume.shape[0]} slices...")
+        if args.depth_slabs:
+            result = depth_slab_mips(volume, model, device, args.margin_px, args.thickness_px)
+            save_depth_slab_outputs(result, volume, path, args.out_dir, spacing)
+            print(f"  valid area shared by dermal layers: {result['common_dermal_valid'].mean():.1%}")
+            print("  Pixel depths are exploratory; physical spacing has not been verified.")
+            continue
         mip, dej, tortuosities = papillary_dermis_mip(volume, model, device)
 
         stem = path.stem
