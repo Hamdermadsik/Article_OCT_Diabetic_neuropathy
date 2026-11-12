@@ -50,12 +50,14 @@ def select_visits(
     n_patients: int = 10,
     seed: int = 0,
     condition: str = "Regular",
+    patient_ids=None,
 ) -> pd.DataFrame:
     """Every Baseline/Isc/PORH scan of one visit per (patient, site).
 
     Only patients with a usable Baseline-and-PORH visit on both a hand and a
     foot site are eligible, drawn evenly across groups as in the hand-vs-foot
-    comparison. Each site uses that patient's earliest qualifying visit.
+    comparison -- or, given ``patient_ids``, exactly those patients. Each site
+    uses that patient's earliest qualifying visit.
     """
     usable = scans[
         scans["phase"].isin(PHASES)
@@ -70,7 +72,11 @@ def select_visits(
     if not eligible:
         return usable.iloc[0:0]
 
-    chosen, group = draw_patients(eligible, patients, n_patients, seed)
+    if patient_ids is not None:
+        _, group = draw_patients(eligible, patients, 0, seed)
+        chosen = [p for p in eligible if p in set(patient_ids)]
+    else:
+        chosen, group = draw_patients(eligible, patients, n_patients, seed)
     parts = []
     for patient_id in chosen:
         for site in SITES:
@@ -83,6 +89,12 @@ def select_visits(
             parts.append(visit.assign(visit_id=f"{patient_id} | {site} | {dates[0]}"))
     selected = pd.concat(parts, ignore_index=True)
     selected["group"] = [group.get(p, "unknown") for p in selected["patient_id"]]
+    study = (
+        patients.dropna(subset=["study_group"]).groupby("patient_id")["study_group"].first()
+        if "study_group" in patients.columns
+        else pd.Series(dtype=object)
+    )
+    selected["study_group"] = [study.get(p) for p in selected["patient_id"]]
     return selected
 
 
@@ -104,6 +116,8 @@ def summarise_visit(visit: pd.DataFrame) -> dict:
         "visit_id": first["visit_id"],
         "patient_id": first["patient_id"],
         "group": first["group"],
+        "study_group": first.get("study_group"),
+        "session": first["cohort"],
         "site": first["protocol_area"],
         "n_baseline": len(baseline),
         "n_porh": len(porh),
@@ -184,24 +198,67 @@ def draw_mip_strip(scans: pd.DataFrame, files: dict, out_path: Path) -> None:
     plt.close(fig)
 
 
+def draw_group_time_course(scans: pd.DataFrame, out_path: Path) -> None:
+    """Slab flow and blobs over time, each visit coloured by study group."""
+    colours = {"T2DM": "tab:red", "Control": "tab:blue"}
+    fig, axes = plt.subplots(len(METRICS), len(SITES), figsize=(13, 8), sharex=True)
+    for r, metric in enumerate(METRICS):
+        for c, site in enumerate(SITES):
+            ax = axes[r, c]
+            for _, visit in scans[scans["protocol_area"] == site].groupby("visit_id"):
+                base = visit.loc[visit["phase"] == "Baseline", metric].mean()
+                colour = colours.get(visit["study_group"].iloc[0])
+                if not base or colour is None:
+                    continue
+                visit = visit.sort_values("seconds")
+                # October visits dashed: that session differs in flow and settings.
+                style = "--" if visit["cohort"].iloc[0] == "october_2020" else "-"
+                ax.plot(visit["seconds"], visit[metric] / base, color=colour, lw=1, ls=style,
+                        marker="o", ms=2.5, alpha=0.75)
+            ax.axhline(1, color="k", lw=0.8, ls=":")
+            ax.axvline(0, color="grey", lw=0.6, ls=":")
+            ax.set_title(f"{site}: {metric.replace('_', ' ')} relative to Baseline mean", fontsize=10)
+            if r == len(METRICS) - 1:
+                ax.set_xlabel("seconds from the occlusion scan")
+    handles = [plt.Line2D([], [], color=c, label=g) for g, c in colours.items()]
+    handles.append(plt.Line2D([], [], color="k", ls="--", label="October session"))
+    fig.legend(handles=handles, loc="upper center", ncol=3)
+    plt.tight_layout(rect=(0, 0, 1, 0.95))
+    plt.savefig(out_path, dpi=90)
+    plt.close(fig)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--patients", type=int, default=10)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--study-groups",
+        action="store_true",
+        help="analyse every patient in a recorded study group (T2DM/Control) instead of a random draw",
+    )
     add_slab_arguments(parser)
     parser.add_argument(
         "--out-dir", type=Path, default=None, help="default: outputs/porh_time_course/slab_<top>_<bottom>"
     )
     args = parser.parse_args()
     slab = slab_from_args(parser, args)
-    out_dir = args.out_dir or Path("outputs") / "porh_time_course" / f"slab_{slab[0]}_{slab[1]}"
+    run_name = "study_groups" if args.study_groups else "random_draw"
+    out_dir = args.out_dir or Path("outputs") / "porh_time_course" / run_name / f"slab_{slab[0]}_{slab[1]}"
 
     manifest = project_root() / "data" / "manifest"
     scans = pd.read_csv(manifest / "scans.csv")
     if "acquisition_datetime" not in scans.columns:
         print("scans.csv has no acquisition times - re-run src/manifest/build_manifest.py with the drive attached.")
         return 1
-    selected = select_visits(scans, pd.read_csv(manifest / "patients.csv"), args.patients, args.seed)
+    patients = pd.read_csv(manifest / "patients.csv")
+    patient_ids = None
+    if args.study_groups:
+        if "study_group" not in patients.columns or patients["study_group"].isna().all():
+            print("No study groups recorded - add them to configs/manifest_decisions.yaml and rebuild.")
+            return 1
+        patient_ids = set(patients.dropna(subset=["study_group"])["patient_id"])
+    selected = select_visits(scans, patients, args.patients, args.seed, patient_ids=patient_ids)
     if selected.empty:
         print("No patients have Baseline and PORH visits on both a hand and a foot site.")
         return 1
@@ -226,13 +283,16 @@ def main() -> int:
     )
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    columns = ["visit_id", "group", "phase", "scan_number", "acquisition_datetime", "seconds",
+    columns = ["visit_id", "group", "study_group", "cohort", "phase", "scan_number",
+               "acquisition_datetime", "seconds",
                "blobs", "mean_slab_flow", "flow_peak_px_below_dej", "filename"]
     per_scan[columns].to_csv(out_dir / "per_scan.csv", index=False)
     visits = pd.DataFrame([summarise_visit(v) for _, v in per_scan.groupby("visit_id", sort=False)])
     visits.to_csv(out_dir / "per_visit.csv", index=False)
     draw_time_course(per_scan, out_dir / "time_course.png")
     draw_mip_strip(per_scan, files, out_dir / "mip_baseline_isc_porh.png")
+    if per_scan["study_group"].notna().any():
+        draw_group_time_course(per_scan, out_dir / "time_course_by_study_group.png")
 
     pd.set_option("display.width", 200)
     show = ["visit_id", "blobs_baseline", "blobs_baseline_sd", "blobs_isc", "blobs_porh_peak",
@@ -244,8 +304,15 @@ def main() -> int:
     for metric in METRICS:
         exceeds = (visits[f"{metric}_peak_vs_baseline_sd"] > 2).sum()
         print(f"{metric}: PORH peak more than 2 Baseline SDs above Baseline in {exceeds} of {len(visits)} visits")
-    print(visits.groupby("site")[[f"{m}_peak_ratio" for m in METRICS] + ["mean_slab_flow_peak_time_s"]]
-          .median().to_string())
+    summary_cols = ["mean_slab_flow_baseline", "mean_slab_flow_peak_ratio", "blobs_peak_ratio",
+                    "mean_slab_flow_peak_time_s"]
+    print(visits.groupby("site")[summary_cols].median().to_string())
+    if visits["study_group"].notna().any():
+        print("\nby study group (medians):")
+        print(visits.groupby(["study_group", "site"])[summary_cols].median().round(2).to_string())
+        may_only = visits[visits["session"] == "may_2021"]
+        print("\nby study group, May session only (removes the October confound):")
+        print(may_only.groupby(["study_group", "site"])[summary_cols].median().round(2).to_string())
     print(f"\nwritten to {out_dir}")
     return 0
 

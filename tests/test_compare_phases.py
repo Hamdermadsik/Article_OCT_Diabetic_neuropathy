@@ -18,6 +18,7 @@ def _visit_scans(patient, site, start, date="2021-05-12", condition="Regular", t
         rows.append(
             {
                 "patient_id": patient,
+                "cohort": "may_2021",
                 "protocol_area": site,
                 "bodypart": "Hand" if site == "Hand" else "Hallux",
                 "date": date,
@@ -79,6 +80,24 @@ class TestSelectVisits:
         selected = select_visits(scans, _patients(("A", "HP")), n_patients=1)
 
         assert set(selected["date"]) == {"2021-05-12"}
+
+    def test_given_patients_are_all_taken_instead_of_a_random_draw(self):
+        scans = pd.DataFrame(
+            _visit_scans("A", "Hand", 100) + _visit_scans("A", "Foot", 200)
+            + _visit_scans("B", "Hand", 300) + _visit_scans("B", "Foot", 400)
+            + _visit_scans("C", "Hand", 500) + _visit_scans("C", "Foot", 600)
+        )
+        patients = _patients(("A", "HP"), ("B", "DP"), ("C", "HP")).assign(
+            study_group=["Control", "T2DM", None]
+        )
+
+        selected = select_visits(scans, patients, n_patients=1, patient_ids={"A", "B"})
+
+        assert set(selected["patient_id"]) == {"A", "B"}
+        assert selected.drop_duplicates("patient_id").set_index("patient_id")["study_group"].to_dict() == {
+            "A": "Control",
+            "B": "T2DM",
+        }
 
     def test_no_eligible_patients_yields_nothing(self):
         scans = pd.DataFrame(_visit_scans("A", "Hand", 100))
