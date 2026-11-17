@@ -446,6 +446,107 @@ def hand_foot_figure(visits: pd.DataFrame, out: Path) -> None:
     plt.close(fig)
 
 
+PUBLISHED_SHEET = Path("excel_filer/2021-05-OCTAAgeing-hand.xlsx")
+
+
+def published_vad(path: Path = PUBLISHED_SHEET) -> pd.DataFrame:
+    """Per-scan hand vessel area density (%) from the published study (session 1).
+
+    The sheet holds one row per participant (e.g. "HP-39" or "DP-02") with
+    columns Scan 1..Scan 12 in acquisition order: 5 Baseline, the ischemia scan,
+    then PORH.
+    """
+    sheet = pd.read_excel(path, "Vessel area density", header=None)
+    rows = sheet.iloc[3:, :15]
+    rows.columns = ["age_group", "health", "participant"] + [f"scan_{i}" for i in range(1, 13)]
+    rows = rows[rows["participant"].notna()].copy()
+    ids = rows["participant"].astype(str).str.extract(r"(DP|HP)\D*(\d+)")
+    rows["kind"], rows["number"] = ids[0], pd.to_numeric(ids[1])
+    return rows.dropna(subset=["kind", "number"])
+
+
+def match_published(scans: pd.DataFrame, published: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """Pair each of our hand scans with the published VAD of the same scan.
+
+    Scans are paired by acquisition order within the visit. A participant is
+    paired only up to the shorter of the two scan lists, and noted if the
+    lengths differ.
+    """
+    hand = scans[scans["site"] == "Hand"]
+    ids = hand["patient_id"].str.extract(r"(DP|HP)-(\d+)")
+    hand = hand.assign(kind=ids[0], number=pd.to_numeric(ids[1]))
+    rows, notes = [], []
+    for patient, visit in hand.groupby("patient_id"):
+        visit = visit.sort_values("seconds")
+        match = published[(published["kind"] == visit["kind"].iloc[0]) & (published["number"] == visit["number"].iloc[0])]
+        if match.empty:
+            notes.append(f"{patient}: not in the published sheet")
+            continue
+        values = pd.to_numeric(match.iloc[0][[f"scan_{i}" for i in range(1, 13)]], errors="coerce").dropna().to_numpy()
+        if len(values) != len(visit):
+            notes.append(f"{patient}: {len(visit)} scans here, {len(values)} in the sheet (first {min(len(values), len(visit))} paired)")
+        for k in range(min(len(values), len(visit))):
+            row = visit.iloc[k]
+            rows.append({"patient_id": patient, "study_group": row["study_group"], "phase": row["phase"],
+                         "vad": values[k], "slab_flow": row["mean_slab_flow"],
+                         **{layer: row[layer] for layer in LAYERS}})
+    return pd.DataFrame(rows), notes
+
+
+def within_person_rho(matched: pd.DataFrame, column: str) -> float:
+    """Median over participants of the Spearman correlation across their own scans."""
+    from scipy.stats import spearmanr
+
+    rhos = [spearmanr(g["vad"], g[column])[0] for _, g in matched.groupby("patient_id") if len(g) >= 5]
+    return float(np.nanmedian(rhos))
+
+
+def validation_figure(matched: pd.DataFrame, out: Path) -> None:
+    """Published VAD against our flow in each depth layer, one point per scan."""
+    from scipy.stats import spearmanr
+
+    markers = {"Baseline": "o", "Isc": "v", "PORH": "^"}
+    fig, axes = plt.subplots(1, len(LAYERS), figsize=(12, 4.2), sharey=True)
+    for ax, layer in zip(axes, LAYERS):
+        for group in GROUPS:
+            for phase, marker in markers.items():
+                sel = matched[(matched["study_group"] == group) & (matched["phase"] == phase)]
+                ax.scatter(sel[layer], sel["vad"], s=22, marker=marker, facecolor=COLOURS[group],
+                           edgecolor="white", linewidth=0.5, alpha=0.85)
+        rho = spearmanr(matched[layer], matched["vad"])[0]
+        ax.set_title(f"{LAYER_NAMES[layer]}\nρ = {rho:.2f} (all scans), {within_person_rho(matched, layer):.2f} "
+                     "(within person)", color=INK, fontsize=9)
+        ax.set_xlabel("our mean flow in the layer")
+    axes[0].set_ylabel("published vessel area density (%)")
+    for group in GROUPS:
+        axes[0].scatter([], [], s=30, color=COLOURS[group], label=group)
+    for phase, marker in markers.items():
+        axes[0].scatter([], [], s=30, marker=marker, color=MUTED, label={"Isc": "Occlusion"}.get(phase, phase))
+    axes[0].legend(frameon=False, fontsize=8, loc="upper left")
+    fig.suptitle(f"Our depth-layer flow vs the published hand VAD (Untracht et al. 2023): "
+                 f"{len(matched)} scans, {matched['patient_id'].nunique()} participants", color=INK, fontsize=11)
+    fig.tight_layout()
+    fig.savefig(out, dpi=120)
+    plt.close(fig)
+
+
+def published_group_comparison(matched: pd.DataFrame) -> pd.DataFrame:
+    """The published VAD summarised per visit like our measures, T2DM vs Control."""
+    per_visit = matched.groupby(["patient_id", "study_group"]).apply(
+        lambda g: pd.Series({
+            "vad_baseline": g.loc[g["phase"] == "Baseline", "vad"].mean(),
+            "vad_isc_ratio": g.loc[g["phase"] == "Isc", "vad"].mean() / g.loc[g["phase"] == "Baseline", "vad"].mean(),
+            "vad_peak_ratio": g.loc[g["phase"] == "PORH", "vad"].max() / g.loc[g["phase"] == "Baseline", "vad"].mean(),
+        }), include_groups=False).reset_index()
+    rows = []
+    for column in ("vad_baseline", "vad_isc_ratio", "vad_peak_ratio"):
+        med = per_visit.groupby("study_group")[column].median()
+        rows.append({"measure": column, "T2DM": med.get("T2DM"), "Control": med.get("Control"),
+                     "n": f"{(per_visit['study_group'] == 'T2DM').sum()}/{(per_visit['study_group'] == 'Control').sum()}",
+                     "p": p_value(per_visit, column)})
+    return pd.DataFrame(rows)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results", type=Path, default=Path("outputs/porh_time_course/study_groups/slab_-5_15"))
@@ -507,6 +608,24 @@ def main() -> int:
     for group in GROUPS:
         print(f"  {group}:")
         print(hand_vs_foot(visits[visits["study_group"] == group]).round(3).to_string(index=False))
+
+    if PUBLISHED_SHEET.exists():
+        from scipy.stats import spearmanr
+
+        matched, notes = match_published(profiled, published_vad())
+        validation_figure(matched, args.out_dir / "validation_published_vad.png")
+        print(f"\nValidation against the published hand VAD: {len(matched)} scans, "
+              f"{matched['patient_id'].nunique()} participants")
+        for note in notes:
+            print(f"  {note}")
+        isc_at_6 = (matched.groupby("patient_id")["phase"].apply(lambda p: p.iloc[5] if len(p) > 5 else None) == "Isc")
+        print(f"  our occlusion scan is scan 6 for {int(isc_at_6.sum())} of {len(isc_at_6)} participants")
+        for column in ["slab_flow", *LAYERS]:
+            print(f"  {column:13} rho all {spearmanr(matched[column], matched['vad'])[0]:.2f}  "
+                  f"within person {within_person_rho(matched, column):.2f}  "
+                  + "  ".join(f"{ph} {spearmanr(g[column], g['vad'])[0]:.2f}"
+                              for ph, g in matched.groupby("phase")))
+        print(published_group_comparison(matched).round(3).to_string(index=False))
     return 0
 
 

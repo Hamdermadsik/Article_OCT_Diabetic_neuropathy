@@ -12,8 +12,8 @@ results in `outputs/porh_time_course/study_groups/slab_-5_15/`.*
 2. **Hands:** Baseline flow is the same in both groups. Controls show a bigger PORH
    rise (×1.95 vs ×1.40), but the difference is **not significant** (p = 0.25).
 3. **Feet:** the PORH response is weak in both groups. Foot flow often *rises*
-   during occlusion, so the cuff probably doesn't stop flow to the foot, and foot
-   PORH can't be used to compare the groups yet.
+   during occlusion, even though the cuff was on the calf at 200 mmHg (from the
+   paper). Until that's explained, foot PORH can't be used to compare the groups.
 4. **Deeper layers (section 3) show the same pattern more clearly.** In T2DM
    hands, flow in the upper dermis and the deep plexus hardly drops during
    occlusion (about 0.9 of Baseline, against about 0.5 in controls, p ≈ 0.03).
@@ -28,6 +28,11 @@ results in `outputs/porh_time_course/study_groups/slab_-5_15/`.*
    feet show no drop and ×1.2. In controls the foot also has *lower* resting flow
    than the hand (10 of 11 people), but in T2DM it doesn't. This is a
    within-person version of the high T2DM foot flow in point 1.
+7. **The pipeline matches the published analysis (section 5).** The data comes
+   from Untracht et al. (Sci Rep 2023). Their per-scan hand vessel area density
+   tracks our deep-layer flow almost exactly (ρ = 0.94 over 224 scans). It also
+   shows the same T2DM difference in the hand: lower at rest (p = 0.005) and a
+   smaller occlusion drop.
 
 ## What was run
 
@@ -119,7 +124,10 @@ the median over participants; the band is the middle 50%.
     controls.
   - Neither difference is significant (p = 0.26 for the dip).
 - **Foot:** almost no curve in either group, and flow goes *up* during occlusion.
-  The cuff probably doesn't stop flow to the foot.
+  The cuff was on the calf at 200 mmHg (section 5), which should stop arterial
+  flow. So either the occlusion scan comes too early in the 5 minutes, or the
+  OCTA signal doesn't fall with blood flow in the foot (for example, motion, or
+  signal from stationary blood).
 
 ![PORH peak ratio per participant](figures/porh_study_groups/porh_peak_ratio.png)
 
@@ -228,9 +236,11 @@ PORH peak more than ×1.25 above Baseline:
   Two explanations are worth checking:
   1. **Physiological:** stiff vessels, or blood shunting past the capillaries,
      keep flow going.
-  2. **Practical:** if the cuff was inflated to a fixed pressure, T2DM
-     participants with higher blood pressure may not have been fully occluded.
-     **What cuff pressure was used, and was blood pressure recorded?**
+  2. **Practical:** the cuff was inflated to a fixed 200 mmHg (section 5).
+     People with diagnosed hypertension were excluded, so that should be enough
+     for most participants. But stiff, calcified arteries in diabetes can resist
+     compression. **Per-participant blood pressure would settle this** (it was
+     measured; see `docs/questions_for_gavrielle.md`).
 - **Measuring PORH from the occlusion scan** (peak / occlusion instead of peak /
   Baseline) combines both effects. In the papillary slab it gave ×1.74 vs ×2.96
   (p = 0.09). It is a sensible pre-specified measure for the article.
@@ -269,7 +279,8 @@ in the upper dermis (p = 0.005 and 0.003) and the deep plexus (p = 0.001 and
 - **The foot reacts weakly and slowly:** there's no drop during occlusion, a small
   overshoot, and a later peak.
 - **Possible reasons for the weak foot:**
-  - incomplete occlusion (the cuff question again);
+  - the occlusion not registering in the foot, even with the calf cuff at
+    200 mmHg (see section 2);
   - colder feet and a longer path from the cuff to the toes;
   - many shunt vessels in hallux skin that bypass the capillaries.
 
@@ -293,6 +304,89 @@ in the upper dermis (p = 0.005 and 0.003) and the deep plexus (p = 0.001 and
   per person. The median is 0.65 in controls (1 of 11 above 1) against 1.24 in
   T2DM (7 of 11 above 1); p = 0.009, Mann-Whitney. It was found after looking,
   so it needs confirming.
+
+---
+
+## 5. Validation against the published analysis
+
+The data comes from **Untracht et al., *Scientific Reports* 2023, 13:1122**
+(`articles/gav.pdf`). Their protocol matches what we see in the files:
+
+- **Sites:** the back of the right hand and the top of the right big toe.
+- **Scan:** a 5 × 5 mm volume; 1174 × 120 A-scans at 4.4 × 41 µm; VivoSight Dx.
+- **Cuff:** on the lower arm (hand) or calf (foot), at **200 mmHg for 5 min**.
+- **Scans:** 5 Baseline, then 6 PORH over about 5 min.
+- **Summary values:** they also used the mean of the Baseline scans and the
+  maximum of the PORH scans, like us.
+
+**How their method differs from ours:**
+- **Where they measure:** surface-referenced, from **175 to 675 µm below the skin
+  surface** (the superficial plexus). Ours is DEJ-referenced and also covers the
+  papillary loops.
+- **What they measure:** their MIPs were turned into binary vessel maps, and
+  vessel area density (VAD) and other measures were computed with OCTAVA.
+
+`excel_filer/2021-05-OCTAAgeing-hand.xlsx` holds **their VAD for every hand scan**.
+I paired those with our scans by acquisition order within each visit:
+
+- **224 scans from 19 participants** were paired.
+- The 3 October controls (CA, JA, TL) are not in their sheet.
+- For SR they list 12 scans and we have 11, so only the first 11 were paired.
+- In 17 of 19 participants the occlusion scan is scan 6 in both lists. DG and TA
+  have fewer Baseline scans, and the scan counts still match.
+
+![Validation against published VAD](figures/porh_study_groups/validation_published_vad.png)
+
+| Our measure vs their VAD | All scans | Within each person (median) | Baseline scans only |
+|---|---|---|---|
+| Slab flow (MIP, −5…15 px) | 0.67 | 0.92 | 0.39 |
+| Papillary layer (−5…15 px) | 0.64 | 0.93 | 0.36 |
+| Upper dermis (15…40 px) | 0.88 | 0.97 | 0.82 |
+| **Deep plexus (40…90 px)** | **0.94** | **0.97** | **0.91** |
+
+*Spearman ρ. "Within each person" correlates the ~11 scans of one participant,
+which tests whether both measures follow the same changes through Baseline,
+occlusion and PORH.*
+
+- **Our deep-plexus flow reproduces their measurement almost exactly.** That fits:
+  40–90 px below the DEJ is roughly where their 175–675 µm slab sits, given about
+  30 px of epidermis. So the segmentation, the red-minus-green flow and the depth
+  referencing all behave.
+- **Within a person, every layer follows their changes (ρ ≥ 0.92),** papillary
+  included. Occlusion and PORH move the whole skin together.
+- **Between people at rest, the papillary layer only partly agrees (ρ = 0.36).**
+  So it measures something their superficial-plexus analysis doesn't, which is
+  the reason to measure there. It also means the papillary results can't borrow
+  credibility from theirs; they need their own checks (the loop annotation).
+
+### Their VAD gives the same group differences
+
+Their VAD for the same 19 participants (May session: 11 T2DM vs 8 controls),
+summarised exactly like our measures:
+
+| Published hand VAD | T2DM | Control | p |
+|---|---|---|---|
+| Baseline (%) | **25.2** | **40.7** | **0.005** |
+| Occlusion / Baseline | 0.85 | 0.69 | 0.09 |
+| PORH peak / Baseline | 1.62 | 1.50 | 0.55 |
+
+- **Lower hand Baseline in T2DM:** the same as our deep plexus (23.6 vs 35.8,
+  p = 0.009 in the May session), and as the paper reports (41% vs 32%,
+  p = 0.036 in their group).
+- **Smaller occlusion drop in T2DM:** the same direction as ours (section 3).
+- **PORH peak ratio:** slightly *higher* in T2DM in their VAD, the opposite
+  direction to our flow, but neither is significant. VAD has a ceiling (controls
+  already start near 41% of the image filled, with less room to grow). Flow
+  intensity doesn't have that ceiling.
+
+**The paper's foot results also agree with ours:**
+- foot VAD at rest is higher in T2DM (p = 0.075);
+- the foot PORH response is smaller in T2DM (diameter change 5% vs 19%,
+  p = 0.003);
+- the foot reacts less than the hand, significantly so in T2DM.
+
+Their foot per-scan values aren't in our spreadsheets, so the foot can't be
+paired yet.
 
 ---
 
@@ -343,8 +437,9 @@ Overall, slab flow detects a PORH response in 29 of 44 visits and the loop count
   may differ. With them removed, the foot Baseline difference and the direction of
   the hand PORH difference both hold. Hand Baseline flow flips slightly (T2DM 26.9
   vs controls 30.7), but it is far from significant either way.
-- **Foot occlusion.** If the cuff doesn't stop flow to the foot, foot PORH measures
-  something other than reactive hyperaemia.
+- **Foot occlusion.** The calf cuff was at 200 mmHg, yet foot flow doesn't drop
+  during the occlusion scan. Until that's explained, foot PORH may not measure
+  pure reactive hyperaemia.
 - **The flow signal is the scanner's red display overlay,** not the raw OCTA data.
 - **The segmentation model** was trained with patient leakage and still needs
   retraining.
@@ -357,17 +452,19 @@ Overall, slab flow detects a PORH response in 29 of 44 visits and the loop count
 1. **Scan-quality check:** flag flow above the skin surface, cut-off surfaces and
    missing DEJ, then re-test the foot Baseline difference without the poor scans.
    The flow-vs-depth profile is a natural starting point.
-2. **Find out where the cuff was placed on the foot,** and whether skin or room
-   temperature was recorded (temperature strongly affects resting foot flow).
-3. **Ask about the cuff:** what pressure was used, and was blood pressure
-   recorded? Incomplete occlusion in T2DM hands would explain the weak occlusion
-   dip.
+2. **Find out whether skin or room temperature was recorded** (temperature
+   strongly affects resting foot flow). The cuff placement is now known from the
+   paper: lower arm or calf, 200 mmHg.
+3. **Get per-participant blood pressure** and the timing of the occlusion scan,
+   to explain the weak occlusion dip in T2DM hands and in all feet.
 4. **Decide the article's main measures in advance** (for example: papillary PORH
    peak / occlusion; deep-plexus occlusion ratio), then test only those, so the
    p-values mean something.
-5. **Validate the loop count:** mark loops by hand on 22 blinded tiles in Fiji
+5. **Ask Gavrielle** (`docs/questions_for_gavrielle.md`): the source of the flow
+   data, her MIP script, the foot spreadsheet, and the matched control group.
+6. **Validate the loop count:** mark loops by hand on 22 blinded tiles in Fiji
    (`docs/loop_annotation.md`), then tune the detector against the marks.
-6. Ask why `DP-11-DC` is in neither group (adding one more diabetic would help).
+7. Ask why `DP-11-DC` is in neither group (adding one more diabetic would help).
 
 ## Reproduce
 
