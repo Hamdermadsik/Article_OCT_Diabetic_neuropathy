@@ -117,3 +117,28 @@ with `--results /path/to/reviewer.json --manifest-dir /path/to/separate/manifest
 Sparse OCTA signal alone is not a
 quality failure. MIP QC does not validate anatomical slab placement.
 The server is bound to localhost; do not expose it on a public network.
+
+## Read-only depth viewer
+
+```bash
+uv run --locked python src/depth_viewer.py --open
+```
+
+This separate local application (default port 8767) browses skin-surface-relative MIPs
+with depth, slab thickness, and B-scan sliders. The default scan is the local
+AC S2387 volume; pass another DICOM filepath as a positional argument. It uses
+the existing `outputs/dej_depth_test/<stem>_depth_slabs.npz` boundaries if found,
+or segments the volume once before opening. `--boundaries PATH` selects a cache
+explicitly. It does not write QC decisions, manifest entries, or source data.
+
+Depths are nonnegative integer pixels below the local predicted skin surface,
+with half-open intervals. At zero, the interval follows the top of the epidermis
+column by column; the slider cannot enter air above it. DEJ stays visible as a
+reference line but is not the origin of this viewer's depth slider. The default
+thickness is 5 pixels; use 1 for thin depth slices. The QC MIP definition remains
+unchanged (legacy DEJ +0..+15).
+All depths use the same 0-255 RGB-overlay scale (16-bit data divide by 257),
+not depth-specific min/max normalization. Invalid intervals are pink, not zero.
+The square MIP view is not physically calibrated. Skin surface is white, DEJ
+yellow, and the selected interval cyan on the B-scan. Boundaries are model
+estimates, not an independent anatomical reference.

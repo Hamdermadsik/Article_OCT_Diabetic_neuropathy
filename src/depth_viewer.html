@@ -1,0 +1,94 @@
+<!doctype html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OCTA-dybdeviser</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px system-ui,-apple-system,sans-serif;color:#26332d;background:#f6f7f6;letter-spacing:0}header{padding:16px 24px;background:#fff;border-bottom:1px solid #d5ddd7;display:flex;justify-content:space-between;align-items:center;gap:16px}h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:0}button,input{font:inherit}button{height:34px;width:34px;border:1px solid #c7d1ca;border-radius:4px;background:white;color:inherit;cursor:pointer;font-size:20px}button:hover{background:#e3ede6}button:disabled{opacity:.4;cursor:default}button:focus-visible,input:focus-visible{outline:3px solid #3c9469;outline-offset:3px}.muted{font-size:12px;color:#647169;overflow-wrap:anywhere}main{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:26px;max-width:1600px;margin:0 auto;padding:22px 24px}.section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px}.mip-surface{height:min(72vh,760px);min-height:340px;background:#141916;display:flex;align-items:center;justify-content:center;overflow:hidden}#mip{display:block;width:100%;height:100%;object-fit:contain;image-rendering:pixelated}.bscan-surface{background:#141916;height:300px;display:flex;align-items:center;justify-content:center}#bscan{width:100%;height:100%;object-fit:contain;image-rendering:pixelated}.control{border-top:1px solid #d5ddd7;padding:18px 0}.control:first-of-type{margin-top:22px}label{font-weight:600;font-size:13px;display:flex;justify-content:space-between;gap:12px;margin-bottom:14px}output{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:500}.slider-row{display:flex;align-items:center;gap:12px}input[type=range]{width:100%;accent-color:#248653;cursor:pointer;min-width:0;height:24px}.legend{display:flex;flex-wrap:wrap;gap:16px;padding-top:12px;font-size:12px;color:#59675e}.legend span{display:flex;gap:6px;align-items:center}.swatch{width:13px;height:4px;background:#fff;border:1px solid #a9b0ab}.swatch.dej{background:#ffff00;border:0}.swatch.slab{background:#28dcff;border:0}.under-image{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px}.state{min-width:90px;text-align:right;font-size:12px;color:#4d6e59}#error{display:none;padding:12px 24px;color:#9b2f2f;background:#ffe8e3}.display-info{margin-top:18px;border-top:1px solid #d5ddd7;padding-top:14px;line-height:1.7}#requested{color:#246746}
+@media(max-width:850px){main{grid-template-columns:minmax(0,1fr);gap:24px;padding:16px}.mip-surface{height:52vh;min-height:280px}.bscan-surface{height:240px}header{padding:14px 16px}.control{padding:16px 0}}
+.mip-surface{width:min(100%,72vh,760px);height:auto;aspect-ratio:1;min-height:0;margin:auto}#mip{object-fit:fill}
+@media(max-width:850px){.mip-surface{width:min(100%,52vh)}}
+.index-stepper{display:grid;grid-template-columns:40px minmax(70px,140px) 40px;justify-content:center;gap:12px;align-items:center}
+.index-stepper button{width:40px;height:40px}.index-stepper input{width:100%;height:40px;border:1px solid #bccac0;border-radius:4px;text-align:center;background:white;color:inherit;font-variant-numeric:tabular-nums;appearance:textfield}
+.index-stepper input::-webkit-inner-spin-button,.index-stepper input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.bscan-depth-layout{display:grid;grid-template-columns:minmax(0,1fr) 64px;gap:14px;align-items:stretch}
+.depth-heading{margin-bottom:10px;font-weight:400}.depth-heading output{color:#26332d}
+.depth-rail{position:relative;height:300px;border-left:1px solid #d5ddd7}
+.depth-rail .slider-row{position:absolute;inset:0;display:block}
+.depth-rail button{position:absolute;left:50%;transform:translateX(-50%);width:32px;height:32px;font-size:20px}
+.depth-rail #depth{position:absolute;left:50%;transform:translateX(-50%);writing-mode:vertical-lr;direction:ltr;width:24px;min-height:16px;margin:0}
+@media(max-width:850px){.depth-rail{height:240px}.bscan-depth-layout{grid-template-columns:minmax(0,1fr) 56px;gap:8px}}
+</style></head><body>
+<header><div><h1>OCTA-dybdeviser</h1><div id="name" class="muted"></div></div><div id="state" class="state" role="status">Indlæser…</div></header><div id="error" role="alert"></div>
+<main><section><div class="section-title"><h2>En-face MIP</h2><span id="shown-depth" class="muted"></span></div><div class="mip-surface"><img id="mip" alt="MIP af det valgte dybdelag"></div><div class="under-image muted"><span id="valid"></span><span>Fast RGB-skala: 0–255</span></div><div class="display-info muted">Dybde i pixels under beregnet hudoverflade · Intervaller [start, slut)<br>Kvadratisk MIP-oversigt; fysisk skalering er ikke verificeret · Lyserød = ugyldigt område</div></section>
+<section><div class="section-title"><h2>B-scan og aktuelt dybdelag</h2><span id="shown-index" class="muted"></span></div>
+<label for="depth" class="depth-heading muted">Dybde under hudoverfladen <output id="depth-value">0 px</output></label>
+<div class="bscan-depth-layout"><div class="bscan-surface"><img id="bscan" alt="B-scan med hudoverflade, DEJ og det valgte dybdelag"></div>
+<div class="depth-rail"><div class="slider-row"><button id="up" title="5 pixels op" aria-label="5 pixels op">−</button><input id="depth" aria-label="Dybde under hudoverfladen" type="range" min="0" max="200" step="1" value="0"><button id="down" title="5 pixels ned" aria-label="5 pixels ned">+</button></div></div></div>
+<div class="legend"><span><i class="swatch"></i>Hudoverflade</span><span><i class="swatch dej"></i>DEJ</span><span><i class="swatch slab"></i>Valgt lag</span></div>
+<div class="control"><label for="thickness">Lagtykkelse <output id="thickness-value">5 px</output></label><div class="slider-row"><button id="thinner" title="1 pixel tyndere" aria-label="1 pixel tyndere">−</button><input id="thickness" type="range" min="1" max="60" step="1" value="5"><button id="thicker" title="1 pixel tykkere" aria-label="1 pixel tykkere">+</button></div></div>
+<div class="control"><label for="index">B-scan <output id="index-value"></output></label><div class="index-stepper"><button id="previous-index" title="Forrige B-scan" aria-label="Forrige B-scan" disabled>&larr;</button><input id="index" type="number" min="0" max="119" step="1" value="60" aria-label="B-scan-nummer" disabled><button id="next-index" title="Næste B-scan" aria-label="Næste B-scan" disabled>&rarr;</button></div></div>
+<div id="requested" class="muted"></div></section></main>
+<script>
+const $=id=>document.getElementById(id);let timer=null,sequence=0,info,selectedIndex=0,rendering=false,pending=false;
+let surfaceAtRight=null;
+function alignDepthSlider(){
+ if(!info||surfaceAtRight===null)return;
+ const image=$('bscan').getBoundingClientRect(),rail=$('depth').parentElement.getBoundingClientRect();
+ const scale=Math.min(image.width/info.width,image.height/info.height);
+ const offset=image.top-rail.top+(image.height-info.height*scale)/2;
+ const center=surfaceAtRight+Number($('thickness').value)/2;
+ const top=offset+(center+info.minimum)*scale-8;
+ const height=(info.maximum-info.minimum)*scale+16;
+ $('depth').style.top=`${top}px`;
+ $('depth').style.height=`${height}px`;
+ $('up').style.top=`${top-40}px`;
+ $('down').style.top=`${top+height+8}px`;
+}
+window.addEventListener('resize',alignDepthSlider);
+function values(){return {start:Number($('depth').value),thickness:Number($('thickness').value),index:selectedIndex}}
+function labels(){const p=values();$('depth-value').textContent=`${p.start>=0?'+':''}${p.start} px`;$('thickness-value').textContent=`${p.thickness} px`;$('index-value').textContent=`0–${info.frames-1}`;$('previous-index').disabled=selectedIndex<=0;$('next-index').disabled=selectedIndex>=info.frames-1;$('up').disabled=p.start<=info.minimum;$('down').disabled=p.start>=info.maximum}
+function error(message){$('error').textContent=message;$('error').style.display=message?'block':'none'}
+async function render(ticket){const p=values();$('state').textContent='Opdaterer…';try{
+ const r=await fetch(`/api/frame?start=${p.start}&thickness=${p.thickness}&index=${p.index}`);const data=await r.json();if(ticket!==sequence)return;if(!r.ok)throw Error(data.error||'Kunne ikke generere MIP');
+ const images=await Promise.all([data.mip,data.bscan].map(src=>new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(Error('Billedet kunne ikke indlæses'));img.src=src})));if(ticket!==sequence)return;
+ surfaceAtRight=data.surface_at_right;alignDepthSlider();
+ $('mip').src=images[0].src;$('bscan').src=images[1].src;$('shown-depth').textContent=`Overflade [${data.start}, ${data.stop}) px`;$('shown-index').textContent=`B-scan ${data.index}`;$('valid').textContent=`Gyldigt areal: ${(100*data.valid_fraction).toFixed(1)} %`;$('state').textContent=pending?'Opdaterer…':'Klar';if(!pending)$('requested').textContent='';error('');
+ }catch(e){if(ticket===sequence){error(e.message);$('state').textContent='Fejl'}}}
+// Keep one request in flight and sample the latest position without waiting for a pause.
+function scheduleRender(){
+ if(rendering||timer!==null||!pending)return;
+ timer=setTimeout(async()=>{timer=null;rendering=true;pending=false;try{await render(++sequence)}finally{rendering=false;scheduleRender()}},60);
+}
+function update(){labels();alignDepthSlider();$('thinner').disabled=Number($('thickness').value)<=Number($('thickness').min);$('thicker').disabled=Number($('thickness').value)>=Number($('thickness').max);pending=true;$('state').textContent='Opdaterer…';const p=values();$('requested').textContent=`Valgt interval: overflade [${p.start}, ${p.start+p.thickness}) px`;scheduleRender()}
+for(const id of ['depth','thickness'])$(id).oninput=update;
+function setIndex(value){
+ if(!info)return;
+ if(!Number.isInteger(value)){$('index').value=selectedIndex;return}
+ const next=Math.max(0,Math.min(info.frames-1,value));$('index').value=next;
+ if(next===selectedIndex)return;
+ selectedIndex=next;update();
+}
+$('previous-index').onclick=()=>setIndex(selectedIndex-1);$('next-index').onclick=()=>setIndex(selectedIndex+1);
+$('index').onchange=()=>setIndex($('index').valueAsNumber);
+$('index').onkeydown=event=>{
+ if(event.key==='Enter'){event.preventDefault();setIndex($('index').valueAsNumber)}
+ else if(event.key==='Escape'){$('index').value=selectedIndex}
+ else if(event.key==='ArrowUp'||event.key==='ArrowDown'){event.preventDefault();setIndex(selectedIndex+(event.key==='ArrowUp'?1:-1))}
+};
+function repeatAdjustment(button,input,delta){
+ let holdTimer=null;
+ const stop=()=>{clearTimeout(holdTimer);holdTimer=null};
+ const step=()=>{if(!info||button.disabled)return false;input.value=Number(input.value)+delta;update();return !button.disabled};
+ const repeat=()=>{if(step())holdTimer=setTimeout(repeat,300);else stop()};
+ button.style.touchAction='none';
+ button.addEventListener('pointerdown',event=>{
+  if(event.button!==0||button.disabled)return;
+  event.preventDefault();stop();button.focus();button.setPointerCapture(event.pointerId);
+  if(step())holdTimer=setTimeout(repeat,400);
+ });
+ for(const name of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(name,stop);
+ button.addEventListener('click',event=>{if(event.detail===0)step()});
+ window.addEventListener('blur',stop);
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)stop()});
+}
+repeatAdjustment($('up'),$('depth'),-5);repeatAdjustment($('down'),$('depth'),5);
+repeatAdjustment($('thinner'),$('thickness'),-1);repeatAdjustment($('thicker'),$('thickness'),1);
+(async()=>{try{const r=await fetch('/api/info');if(!r.ok)throw Error('Kunne ikke indlæse scan');info=await r.json();$('name').textContent=info.name;$('depth').min=info.minimum;$('depth').max=info.maximum;$('index').max=info.frames-1;selectedIndex=Math.floor(info.frames/2);$('index').value=selectedIndex;$('index').disabled=false;update()}catch(e){error(e.message);$('state').textContent='Fejl'}})();
+</script></body></html>
