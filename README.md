@@ -35,3 +35,85 @@ uv add <package>
 # Add a dev dependency (e.g. jupyter)
 uv add --dev <package>
 ```
+
+## Manual MIP quality review
+
+Run from the repository root, using the existing environment:
+
+```bash
+uv run --locked python src/qc_review.py --reviewer Magnus --open
+```
+
+Generate the original papillary-dermis QC MIPs and start review:
+
+```bash
+uv run --locked python src/qc_review.py --generate-from data/dicom --reviewer Magnus --open
+```
+
+The QC projection is the existing `papillary_dermis_mip` with offsets 0 and
+15 inclusive (16 rows from the legacy last-epidermal-pixel DEJ convention).
+It is resized to 1355 x 1355 and displayed with per-image linear grayscale
+scaling, like the original MIP plot. This is a visual QC image, not a new
+quantitative intensity metric. No loop counting is performed during generation.
+MIPs are saved in `outputs/qc_mips`, scanned recursively for `*_qc_mip.png`.
+The middle B-scan is saved in a companion `*_qc_bscan.npz` and displayed below
+the MIP. The DEJ overlay fades continuously with a 0-100% slider (default 50%);
+the underlying image stays unchanged and the slider does not save a QC decision.
+On a fresh generation the line comes
+from the same segmentation pass used for the MIP. For an existing MIP without
+a preview, only the middle slice is segmented again; the UI labels that line
+as recomputed. Existing MIPs and scan decisions remain unchanged. A single
+middle slice is a preview, not a validation of every B-scan in the volume.
+To review existing exports, explicitly pass a folder and glob:
+
+```bash
+uv run --locked python src/qc_review.py /path/to/images --pattern '*_mip.png' --reviewer Magnus --open
+```
+
+Each DICOM filename receives one use / discard / unsure decision, independent
+of individual depth layers or regenerated image contents. Notes and reasons
+are optional. Decisions save to `data/manifest/qc_reviews.json`; CSV export
+includes `filename` and `qc_status`. Raw files are never moved or deleted.
+Only the latest decision is stored, without review history. Reason checkboxes
+and notes are informational; only use / discard / unsure sets the QC status.
+
+The manifest builder joins these decisions by the complete DICOM filename.
+`scans.csv` includes `qc_status`, `qc_note`, and `analysis_eligible`. Only
+`use` AND no existing exclusion makes a scan analysis-eligible. Discard,
+unsure and unreviewed scans are withheld. `scans_for_analysis.csv` contains
+only eligible rows. Existing exclusions and segmentation selection remain
+separate from manual image QC. The hand/foot comparison respects eligibility
+when reading the new manifest. Standalone DICOM scripts do not filter a
+manually supplied filepath; use the approved manifest for cohort analysis.
+
+On saving a decision, the review app refreshes an existing `scans.csv` and
+`scans_for_analysis.csv`. If no manifest has been built yet, it only writes
+`approved_scan_filenames.csv`; build the manifest to join patient metadata.
+Builds read `data/manifest/qc_reviews.json` by default, or `--qc-reviews PATH`.
+Review decisions survive rebuilding the manifest.
+
+The segmentation reason is also stored as `segmentation_review_required`, with
+`qc_bscan_index` for the preview that was displayed when the decision was saved
+(zero-based; blank for old decisions without a recorded index). All flagged
+scans are exported to `segmentation_review_candidates.csv`, including scans
+discarded or withheld from the biological analysis. This is a queue for manual
+inspection and corrected annotations, not ground-truth masks or automatic
+training eligibility. Preserve patient-level train/validation/test separation
+when using these cases for later model improvement.
+
+Generation progress is retained in `data/manifest/mip_generation.csv` and
+joined into `scans.csv` on every manifest build or QC refresh. It records
+pending / processing / ready / failed, DICOM/MIP/B-scan paths, error and update
+time. All queued scans are registered before processing. Interrupted work can
+be retried; readable MIPs with readable previews are skipped, and failed scans
+do not abort the batch. A fresh generation never changes manual QC decisions.
+`scans.csv` is the combined overview; `scans_for_analysis.csv` is its approved
+analysis subset. The JSON review log and generation table are persistent
+manifest components, not separate ad-hoc exclusion folders.
+
+The original DICOM filename is shown in the image heading; the review is not
+clinically blinded. Use a separate results file per independent reviewer
+with `--results /path/to/reviewer.json --manifest-dir /path/to/separate/manifest`.
+Sparse OCTA signal alone is not a
+quality failure. MIP QC does not validate anatomical slab placement.
+The server is bound to localhost; do not expose it on a public network.
