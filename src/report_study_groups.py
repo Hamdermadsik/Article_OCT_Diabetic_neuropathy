@@ -220,7 +220,7 @@ def hand_examples(visits: pd.DataFrame, scans: pd.DataFrame, folder: Path, out: 
         for ax, (label, r), mip in zip(row_axes, chosen, mips):
             ax.imshow(mip, cmap="gray", aspect="auto", vmin=0, vmax=vmax)
             ax.set_title(f"{patient.replace('MAY-', '')} ({group}, peak ×{ratio:.2f}) - {label}\n"
-                         f"slab flow {r['mean_slab_flow']:.1f}, {int(r['blobs'])} blobs",
+                         f"slab flow {r['mean_slab_flow']:.1f}, {int(r['blobs'])} loops",
                          fontsize=9, color=COLOURS[group] if label == "Baseline" else INK)
             ax.set_xticks([])
             ax.set_yticks([])

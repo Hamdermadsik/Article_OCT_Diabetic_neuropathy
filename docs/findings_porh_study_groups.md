@@ -37,7 +37,7 @@ results in `outputs/porh_time_course/study_groups/slab_-5_15/`.*
 | Sites | Hand and foot (hallux or instep), one visit per site |
 | Scans | 506 (44 visits × about 5 Baseline + 1 occlusion + 6 PORH) |
 | Sessions | All T2DM scanned in May 2021; 3 controls (CA, JA, TL) only in October 2020 |
-| Measure | **Slab flow** = mean brightness of the MIP of the slab from 5 px above to 15 px below the DEJ; plus the blob count, and (section 3) average flow per depth layer |
+| Measure | **Slab flow** = mean brightness of the MIP of the slab from 5 px above to 15 px below the DEJ; plus the **loop count** (the thesis loop detector: threshold 75, minimum size 30, circularity 0.45; not yet validated against loops counted by eye), and (section 3) average flow per depth layer |
 | Statistics | Mann-Whitney U, two-sided, one value per participant and site. No correction for multiple tests. |
 
 *PORH = post-occlusive reactive hyperaemia: the overshoot in blood flow after the
@@ -53,7 +53,7 @@ cuff is released.*
 - **Foot:** T2DM is clearly higher (29.7 vs 19.5).
   - Ranked by foot flow, the 7 lowest are all controls, and 6 of the 7 highest are
     T2DM.
-  - The blob count agrees: 570 vs 350 (p = 0.003).
+  - The loop count agrees: 570 vs 350 (p = 0.003).
   - It is **not the October session**: with the 3 October controls removed it is
     29.7 vs 20.2 (p = 0.004).
   - It is **not where on the foot we scanned**: T2DM is higher on both the hallux
@@ -127,7 +127,7 @@ The peak ratio is the highest PORH scan divided by the Baseline mean.
 
 - **Hand:** controls ×1.95, T2DM ×1.40 (p = 0.25). The direction fits weaker
   vessel reactivity in diabetes, but 11 per group is too few to tell it from chance.
-- **Foot:** ×1.35 vs ×1.24 (p = 0.17). The blob count gives p = 0.045, but with
+- **Foot:** ×1.35 vs ×1.24 (p = 0.17). The loop count gives p = 0.045, but with
   this many tests and a doubtful occlusion it shouldn't be trusted.
 
 ### What it looks like
@@ -305,11 +305,11 @@ October visits removed (May only: 11 T2DM vs 8 controls).
 |---|---|---|---|---|---|
 | Slab flow, Baseline | Hand | 26.9 | 26.3 | 0.60 | 0.97 |
 | | Foot | **29.7** | **19.5** | **0.001** | **0.004** |
-| Blobs, Baseline | Hand | 682 | 610 | 0.56 | 0.97 |
+| Loop count, Baseline | Hand | 682 | 610 | 0.56 | 0.97 |
 | | Foot | **570** | **350** | **0.003** | **0.016** |
 | Slab flow, PORH peak ratio | Hand | 1.40 | 1.95 | 0.25 | 0.48 |
 | | Foot | 1.24 | 1.35 | 0.17 | 0.15 |
-| Blobs, PORH peak ratio | Hand | 1.37 | 1.67 | 0.95 | 0.90 |
+| Loop count, PORH peak ratio | Hand | 1.37 | 1.67 | 0.95 | 0.90 |
 | | Foot | 1.09 | 1.39 | 0.045 | 0.026 |
 | Slab flow during occlusion / Baseline | Hand | 0.93 | 0.62 | 0.26 | 0.35 |
 | | Foot | 1.23 | 1.11 | 0.29 | 0.72 |
@@ -327,7 +327,7 @@ How often the measures detect a response:
 | PORH peak > 2 SD above Baseline (slab flow) | 9 / 11 | 9 / 11 | 5 / 11 | 6 / 11 |
 | Flow lower during occlusion than at Baseline | 7 / 11 | 8 / 11 | 4 / 11 | 5 / 11 |
 
-Overall, slab flow detects a PORH response in 29 of 44 visits and the blob count in
+Overall, slab flow detects a PORH response in 29 of 44 visits and the loop count in
 20 of 44, so slab flow stays the main measure.
 
 **On the p-values:** about 20 tests were run on 22 people. With a strict correction
@@ -365,7 +365,9 @@ Overall, slab flow detects a PORH response in 29 of 44 visits and the blob count
 4. **Decide the article's main measures in advance** (for example: papillary PORH
    peak / occlusion; deep-plexus occlusion ratio), then test only those, so the
    p-values mean something.
-5. Ask why `DP-11-DC` is in neither group (adding one more diabetic would help).
+5. **Validate the loop count:** mark loops by hand on 22 blinded tiles in Fiji
+   (`docs/loop_annotation.md`), then tune the detector against the marks.
+6. Ask why `DP-11-DC` is in neither group (adding one more diabetic would help).
 
 ## Reproduce
 
