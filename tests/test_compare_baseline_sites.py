@@ -141,3 +141,10 @@ class TestResume:
         path = self._saved(tmp_path, slab=np.array([0, 15]))
 
         assert needs_processing(path, (0, 15), recompute=True)
+
+
+def test_only_qc_approved_scans_are_selected_when_manifest_has_qc():
+    scans = pd.DataFrame(_visit("A", 100) + _visit("B", 200))
+    scans["analysis_eligible"] = ~((scans["patient_id"] == "B") & (scans["protocol_area"] == "Hand"))
+    selected = select_scans(scans, _patients(("A", "HP"), ("B", "HP")), n_patients=2)
+    assert set(selected["patient_id"]) == {"A"}

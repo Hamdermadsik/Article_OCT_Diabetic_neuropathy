@@ -56,6 +56,9 @@ def select_scans(
         & ~scans["excluded"].astype(bool)
         & scans["protocol_area"].isin(SITES)
     ]
+    if "analysis_eligible" in usable.columns:
+        approved = usable["analysis_eligible"].map(lambda value: str(value).lower() == "true")
+        usable = usable.loc[approved]
     sites = usable.groupby("patient_id")["protocol_area"].apply(set)
     eligible = sorted(sites[sites.apply(lambda s: set(SITES) <= s)].index)
     if not eligible:
