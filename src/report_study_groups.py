@@ -15,6 +15,7 @@ import argparse
 from pathlib import Path
 
 import matplotlib
+import matplotlib.ticker
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -219,7 +220,7 @@ def hand_examples(visits: pd.DataFrame, scans: pd.DataFrame, folder: Path, out: 
         for ax, (label, r), mip in zip(row_axes, chosen, mips):
             ax.imshow(mip, cmap="gray", aspect="auto", vmin=0, vmax=vmax)
             ax.set_title(f"{patient.replace('MAY-', '')} ({group}, peak ×{ratio:.2f}) - {label}\n"
-                         f"slab flow {r['mean_slab_flow']:.1f}, {int(r['blobs'])} blobs",
+                         f"slab flow {r['mean_slab_flow']:.1f}, {int(r['blobs'])} loops",
                          fontsize=9, color=COLOURS[group] if label == "Baseline" else INK)
             ax.set_xticks([])
             ax.set_yticks([])
@@ -271,6 +272,281 @@ def depth_profiles(scans: pd.DataFrame, folder: Path, out: Path) -> pd.DataFrame
     return per_visit
 
 
+# Depth layers relative to the DEJ (px). The papillary layer is the analysis
+# slab; below it the upper dermis, then the deeper vessel plexus, whose flow
+# peaks around 70 px.
+LAYERS = {"papillary": (-5, 15), "upper_dermis": (15, 40), "deep_plexus": (40, 90)}
+LAYER_NAMES = {"papillary": "Papillary (−5…15 px)", "upper_dermis": "Upper dermis (15…40 px)",
+               "deep_plexus": "Deep plexus (40…90 px)"}
+
+
+def scan_profiles(scans: pd.DataFrame, folder: Path) -> pd.DataFrame:
+    """Every scan's flow-vs-depth profile, plus its mean flow in each layer."""
+    offsets = np.asarray(PROFILE_OFFSETS)
+    profiles = []
+    for filename in scans["filename"]:
+        with cached(folder, filename) as d:
+            profiles.append(d["profile"].copy())
+    scans = scans.copy()
+    scans["profile"] = profiles
+    for layer, (top, bottom) in LAYERS.items():
+        rows = (offsets >= top) & (offsets <= bottom)
+        scans[layer] = [float(np.mean(p[rows])) for p in profiles]
+    return scans
+
+
+def layer_responses(scans: pd.DataFrame) -> pd.DataFrame:
+    """Per visit and layer: Baseline level, occlusion and PORH peak relative to it."""
+    records = []
+    for visit_id, visit in scans.groupby("visit_id"):
+        record = {"visit_id": visit_id, "patient_id": visit["patient_id"].iloc[0], "site": visit["site"].iloc[0],
+                  "study_group": visit["study_group"].iloc[0], "october": bool(visit["october"].iloc[0])}
+        phases = {phase: visit[visit["phase"] == phase] for phase in ("Baseline", "Isc", "PORH")}
+        for layer in LAYERS:
+            base = phases["Baseline"][layer].mean()
+            record[f"{layer}_baseline"] = base
+            record[f"{layer}_isc_ratio"] = phases["Isc"][layer].mean() / base if len(phases["Isc"]) else np.nan
+            record[f"{layer}_peak_ratio"] = phases["PORH"][layer].max() / base
+        records.append(record)
+    return pd.DataFrame(records)
+
+
+def depth_resolved_response(scans: pd.DataFrame, out: Path) -> None:
+    """Occlusion and PORH peak relative to Baseline, at every depth."""
+    depth = np.asarray(PROFILE_OFFSETS)
+    curves = []
+    for _, visit in scans.groupby("visit_id"):
+        base = np.mean(np.stack(visit.loc[visit["phase"] == "Baseline", "profile"].to_list()), axis=0)
+        isc = visit.loc[visit["phase"] == "Isc", "profile"].to_list()
+        porh = np.stack(visit.loc[visit["phase"] == "PORH", "profile"].to_list())
+        curves.append({"site": visit["site"].iloc[0], "study_group": visit["study_group"].iloc[0],
+                       "Occlusion / Baseline": isc[0] / base if isc else np.full_like(base, np.nan),
+                       "PORH peak / Baseline": porh.max(axis=0) / base})
+    curves = pd.DataFrame(curves)
+
+    fig, axes = plt.subplots(1, 4, figsize=(13, 4.6), sharey=True)
+    panels = [(site, kind) for site in SITES for kind in ("Occlusion / Baseline", "PORH peak / Baseline")]
+    for ax, (site, kind) in zip(axes, panels):
+        for group in GROUPS:
+            sel = curves[(curves["site"] == site) & (curves["study_group"] == group)]
+            stack = np.stack(sel[kind].to_list())
+            q1, med, q3 = np.nanpercentile(stack, [25, 50, 75], axis=0)
+            ax.fill_betweenx(depth, q1, q3, color=COLOURS[group], alpha=0.15, linewidth=0)
+            ax.plot(med, depth, color=COLOURS[group], linewidth=2, label=group)
+        for name, (top, bottom) in LAYERS.items():
+            ax.axhline(bottom, color=GRID, linewidth=1.2, zorder=0)
+        ax.axhspan(-5, 15, color=MUTED, alpha=0.10, linewidth=0)
+        ax.axvline(1, color=MUTED, linestyle=":", linewidth=1)
+        ax.set_title(f"{site}: {kind}", color=INK, fontsize=10)
+        ax.set_xlabel("ratio to Baseline")
+    axes[0].invert_yaxis()
+    axes[0].set_ylabel("pixels below the DEJ (negative = above)")
+    axes[0].legend(frameon=False, loc="lower left")
+    for name, (top, bottom) in LAYERS.items():
+        axes[-1].text(1.02, (top + bottom) / 2, LAYER_NAMES[name].split(" (")[0], transform=axes[-1].get_yaxis_transform(),
+                      color=MUTED, fontsize=8, va="center")
+    fig.text(0.5, 0.01, "Median over visits, band = interquartile range. Grey band = the papillary slab; "
+             "thin lines mark the layer boundaries used in the table.", ha="center", color=MUTED, fontsize=8)
+    fig.tight_layout(rect=(0, 0.04, 0.96, 1))
+    fig.savefig(out, dpi=120)
+    plt.close(fig)
+
+
+def layer_dot_plots(layers: pd.DataFrame, out: Path) -> None:
+    """Baseline flow and PORH peak ratio per layer, hand only, one dot per participant."""
+    hand = layers[layers["site"] == "Hand"]
+    rng = np.random.default_rng(0)
+    fig, axes = plt.subplots(2, len(LAYERS), figsize=(11, 6.6))
+    for col, layer in enumerate(LAYERS):
+        for row, (suffix, ylabel) in enumerate((("baseline", "Baseline flow"), ("peak_ratio", "PORH peak / Baseline"))):
+            ax = axes[row, col]
+            column = f"{layer}_{suffix}"
+            for x, group in enumerate(GROUPS):
+                g = hand[hand["study_group"] == group]
+                xs = x + rng.uniform(-0.12, 0.12, len(g))
+                face = np.where(g["october"], "white", COLOURS[group])
+                ax.scatter(xs, g[column], s=38, facecolor=face, edgecolor=COLOURS[group], linewidth=1.5, zorder=3)
+                ax.hlines(g[column].median(), x - 0.28, x + 0.28, color=INK, linewidth=2, zorder=4)
+            if suffix == "peak_ratio":
+                ax.axhline(1, color=MUTED, linestyle=":", linewidth=1)
+            ax.set_xticks([0, 1], GROUPS)
+            ax.set_xlim(-0.6, 1.6)
+            ax.grid(axis="x", visible=False)
+            title = f"{LAYER_NAMES[layer]}\n" if row == 0 else ""
+            ax.set_title(f"{title}p = {p_value(hand, column):.3f}", color=INK, fontsize=9)
+            if col == 0:
+                ax.set_ylabel(ylabel)
+    fig.suptitle("Hand, by depth layer: Baseline flow (top) and PORH response (bottom)", color=INK, fontsize=11)
+    fig.text(0.5, 0.01, "Bar = group median.  Hollow dots = October session.  p = Mann-Whitney U, two-sided.",
+             ha="center", color=MUTED, fontsize=8)
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
+    fig.savefig(out, dpi=120)
+    plt.close(fig)
+
+
+def add_response_ratios(visits: pd.DataFrame) -> pd.DataFrame:
+    """Occlusion relative to Baseline, and PORH peak relative to occlusion."""
+    return visits.assign(
+        isc_ratio=visits["mean_slab_flow_isc"] / visits["mean_slab_flow_baseline"],
+        peak_over_isc=visits["mean_slab_flow_porh_peak"] / visits["mean_slab_flow_isc"],
+    )
+
+
+HAND_FOOT_MEASURES = {
+    "mean_slab_flow_baseline": "Baseline slab flow",
+    "isc_ratio": "Occlusion / Baseline",
+    "mean_slab_flow_peak_ratio": "PORH peak / Baseline",
+    "peak_over_isc": "PORH peak / occlusion",
+    "mean_slab_flow_peak_time_s": "Time of PORH peak (s)",
+}
+
+
+def hand_vs_foot(visits: pd.DataFrame) -> pd.DataFrame:
+    """Each participant's hand against their own foot (Wilcoxon signed-rank)."""
+    from scipy.stats import wilcoxon
+
+    rows = []
+    for column, label in HAND_FOOT_MEASURES.items():
+        wide = visits.pivot_table(index="patient_id", columns="site", values=column).dropna()
+        hand, foot = wide["Hand"], wide["Foot"]
+        rows.append({"measure": label, "hand": hand.median(), "foot": foot.median(),
+                     "hand_higher": int((hand > foot).sum()), "n": len(wide),
+                     "p": float(wilcoxon(hand, foot).pvalue)})
+    return pd.DataFrame(rows)
+
+
+def hand_foot_figure(visits: pd.DataFrame, out: Path) -> None:
+    """Paired lines, hand to foot, for the three response measures."""
+    panels = ["isc_ratio", "mean_slab_flow_peak_ratio", "peak_over_isc"]
+    fig, axes = plt.subplots(1, len(panels), figsize=(11, 4))
+    for ax, column in zip(axes, panels):
+        wide = visits.pivot_table(index=["patient_id", "study_group"], columns="site", values=column).dropna()
+        for (patient, group), row in wide.iterrows():
+            ax.plot([0, 1], [row["Hand"], row["Foot"]], color=COLOURS[group], alpha=0.55, linewidth=1.3,
+                    marker="o", markersize=5)
+        for x, site in enumerate(SITES):
+            ax.hlines(wide[site].median(), x - 0.18, x + 0.18, color=INK, linewidth=2.5, zorder=4)
+        ax.axhline(1, color=MUTED, linestyle=":", linewidth=1)
+        ax.set_xticks([0, 1], SITES)
+        ax.set_xlim(-0.4, 1.4)
+        ax.grid(axis="x", visible=False)
+        ax.set_yscale("log")
+        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+        ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+        ax.set_yticks([0.25, 0.5, 1, 2, 4, 8])
+        ax.set_title(HAND_FOOT_MEASURES[column], color=INK, fontsize=10)
+    axes[0].plot([], [], color=COLOURS["Control"], label="Control")
+    axes[0].plot([], [], color=COLOURS["T2DM"], label="T2DM")
+    axes[0].legend(frameon=False, loc="lower left")
+    fig.suptitle("Hand vs foot in the same participant (papillary slab flow)", color=INK, fontsize=11)
+    fig.text(0.5, 0.01, "One line per participant; bar = median; log scale, dotted line = no change.",
+             ha="center", color=MUTED, fontsize=8)
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    fig.savefig(out, dpi=120)
+    plt.close(fig)
+
+
+PUBLISHED_SHEET = Path("excel_filer/2021-05-OCTAAgeing-hand.xlsx")
+
+
+def published_vad(path: Path = PUBLISHED_SHEET) -> pd.DataFrame:
+    """Per-scan hand vessel area density (%) from the published study (session 1).
+
+    The sheet holds one row per participant (e.g. "HP-39" or "DP-02") with
+    columns Scan 1..Scan 12 in acquisition order: 5 Baseline, the ischemia scan,
+    then PORH.
+    """
+    sheet = pd.read_excel(path, "Vessel area density", header=None)
+    rows = sheet.iloc[3:, :15]
+    rows.columns = ["age_group", "health", "participant"] + [f"scan_{i}" for i in range(1, 13)]
+    rows = rows[rows["participant"].notna()].copy()
+    ids = rows["participant"].astype(str).str.extract(r"(DP|HP)\D*(\d+)")
+    rows["kind"], rows["number"] = ids[0], pd.to_numeric(ids[1])
+    return rows.dropna(subset=["kind", "number"])
+
+
+def match_published(scans: pd.DataFrame, published: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """Pair each of our hand scans with the published VAD of the same scan.
+
+    Scans are paired by acquisition order within the visit. A participant is
+    paired only up to the shorter of the two scan lists, and noted if the
+    lengths differ.
+    """
+    hand = scans[scans["site"] == "Hand"]
+    ids = hand["patient_id"].str.extract(r"(DP|HP)-(\d+)")
+    hand = hand.assign(kind=ids[0], number=pd.to_numeric(ids[1]))
+    rows, notes = [], []
+    for patient, visit in hand.groupby("patient_id"):
+        visit = visit.sort_values("seconds")
+        match = published[(published["kind"] == visit["kind"].iloc[0]) & (published["number"] == visit["number"].iloc[0])]
+        if match.empty:
+            notes.append(f"{patient}: not in the published sheet")
+            continue
+        values = pd.to_numeric(match.iloc[0][[f"scan_{i}" for i in range(1, 13)]], errors="coerce").dropna().to_numpy()
+        if len(values) != len(visit):
+            notes.append(f"{patient}: {len(visit)} scans here, {len(values)} in the sheet (first {min(len(values), len(visit))} paired)")
+        for k in range(min(len(values), len(visit))):
+            row = visit.iloc[k]
+            rows.append({"patient_id": patient, "study_group": row["study_group"], "phase": row["phase"],
+                         "vad": values[k], "slab_flow": row["mean_slab_flow"],
+                         **{layer: row[layer] for layer in LAYERS}})
+    return pd.DataFrame(rows), notes
+
+
+def within_person_rho(matched: pd.DataFrame, column: str) -> float:
+    """Median over participants of the Spearman correlation across their own scans."""
+    from scipy.stats import spearmanr
+
+    rhos = [spearmanr(g["vad"], g[column])[0] for _, g in matched.groupby("patient_id") if len(g) >= 5]
+    return float(np.nanmedian(rhos))
+
+
+def validation_figure(matched: pd.DataFrame, out: Path) -> None:
+    """Published VAD against our flow in each depth layer, one point per scan."""
+    from scipy.stats import spearmanr
+
+    markers = {"Baseline": "o", "Isc": "v", "PORH": "^"}
+    fig, axes = plt.subplots(1, len(LAYERS), figsize=(12, 4.2), sharey=True)
+    for ax, layer in zip(axes, LAYERS):
+        for group in GROUPS:
+            for phase, marker in markers.items():
+                sel = matched[(matched["study_group"] == group) & (matched["phase"] == phase)]
+                ax.scatter(sel[layer], sel["vad"], s=22, marker=marker, facecolor=COLOURS[group],
+                           edgecolor="white", linewidth=0.5, alpha=0.85)
+        rho = spearmanr(matched[layer], matched["vad"])[0]
+        ax.set_title(f"{LAYER_NAMES[layer]}\nρ = {rho:.2f} (all scans), {within_person_rho(matched, layer):.2f} "
+                     "(within person)", color=INK, fontsize=9)
+        ax.set_xlabel("our mean flow in the layer")
+    axes[0].set_ylabel("published vessel area density (%)")
+    for group in GROUPS:
+        axes[0].scatter([], [], s=30, color=COLOURS[group], label=group)
+    for phase, marker in markers.items():
+        axes[0].scatter([], [], s=30, marker=marker, color=MUTED, label={"Isc": "Occlusion"}.get(phase, phase))
+    axes[0].legend(frameon=False, fontsize=8, loc="upper left")
+    fig.suptitle(f"Our depth-layer flow vs the published hand VAD (Untracht et al. 2023): "
+                 f"{len(matched)} scans, {matched['patient_id'].nunique()} participants", color=INK, fontsize=11)
+    fig.tight_layout()
+    fig.savefig(out, dpi=120)
+    plt.close(fig)
+
+
+def published_group_comparison(matched: pd.DataFrame) -> pd.DataFrame:
+    """The published VAD summarised per visit like our measures, T2DM vs Control."""
+    per_visit = matched.groupby(["patient_id", "study_group"]).apply(
+        lambda g: pd.Series({
+            "vad_baseline": g.loc[g["phase"] == "Baseline", "vad"].mean(),
+            "vad_isc_ratio": g.loc[g["phase"] == "Isc", "vad"].mean() / g.loc[g["phase"] == "Baseline", "vad"].mean(),
+            "vad_peak_ratio": g.loc[g["phase"] == "PORH", "vad"].max() / g.loc[g["phase"] == "Baseline", "vad"].mean(),
+        }), include_groups=False).reset_index()
+    rows = []
+    for column in ("vad_baseline", "vad_isc_ratio", "vad_peak_ratio"):
+        med = per_visit.groupby("study_group")[column].median()
+        rows.append({"measure": column, "T2DM": med.get("T2DM"), "Control": med.get("Control"),
+                     "n": f"{(per_visit['study_group'] == 'T2DM').sum()}/{(per_visit['study_group'] == 'Control').sum()}",
+                     "p": p_value(per_visit, column)})
+    return pd.DataFrame(rows)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results", type=Path, default=Path("outputs/porh_time_course/study_groups/slab_-5_15"))
@@ -306,6 +582,50 @@ def main() -> int:
             med = f.groupby("study_group")[column].median()
             print(f"  {column:28} {site}: T2DM {med['T2DM']:7.2f} Control {med['Control']:7.2f}  "
                   f"p {p_value(f, column):.3f} | {p_value(m, column):.3f}")
+
+    profiled = scan_profiles(scans, folder)
+    layers = layer_responses(profiled)
+    depth_resolved_response(profiled, args.out_dir / "depth_resolved_response.png")
+    layer_dot_plots(layers, args.out_dir / "hand_layers.png")
+    print("\nBy depth layer, T2DM vs Control (all | May only):")
+    for layer in LAYERS:
+        for suffix in ("baseline", "isc_ratio", "peak_ratio"):
+            column = f"{layer}_{suffix}"
+            for site in SITES:
+                f = layers[layers["site"] == site]
+                m = f[~f["october"]]
+                med = f.groupby("study_group")[column].median()
+                print(f"  {column:26} {site}: T2DM {med['T2DM']:7.2f} Control {med['Control']:7.2f}  "
+                      f"p {p_value(f, column):.3f} | {p_value(m, column):.3f}")
+    responders = layers.assign(**{f"{l}_up": layers[f"{l}_peak_ratio"] > 1.25 for l in LAYERS})
+    print("\nPORH peak > 1.25 x Baseline, count per group:")
+    print(responders.groupby(["site", "study_group"])[[f"{l}_up" for l in LAYERS]].sum())
+
+    visits = add_response_ratios(visits)
+    hand_foot_figure(visits, args.out_dir / "hand_vs_foot.png")
+    print("\nHand vs foot within participants (Wilcoxon signed-rank):")
+    print(hand_vs_foot(visits).round(3).to_string(index=False))
+    for group in GROUPS:
+        print(f"  {group}:")
+        print(hand_vs_foot(visits[visits["study_group"] == group]).round(3).to_string(index=False))
+
+    if PUBLISHED_SHEET.exists():
+        from scipy.stats import spearmanr
+
+        matched, notes = match_published(profiled, published_vad())
+        validation_figure(matched, args.out_dir / "validation_published_vad.png")
+        print(f"\nValidation against the published hand VAD: {len(matched)} scans, "
+              f"{matched['patient_id'].nunique()} participants")
+        for note in notes:
+            print(f"  {note}")
+        isc_at_6 = (matched.groupby("patient_id")["phase"].apply(lambda p: p.iloc[5] if len(p) > 5 else None) == "Isc")
+        print(f"  our occlusion scan is scan 6 for {int(isc_at_6.sum())} of {len(isc_at_6)} participants")
+        for column in ["slab_flow", *LAYERS]:
+            print(f"  {column:13} rho all {spearmanr(matched[column], matched['vad'])[0]:.2f}  "
+                  f"within person {within_person_rho(matched, column):.2f}  "
+                  + "  ".join(f"{ph} {spearmanr(g[column], g['vad'])[0]:.2f}"
+                              for ph, g in matched.groupby("phase")))
+        print(published_group_comparison(matched).round(3).to_string(index=False))
     return 0
 
 

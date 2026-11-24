@@ -12,7 +12,7 @@ feet, so diabetic and healthy participants can be compared. The steps are:
 external drive (DICOM volumes) ─┐
 Excel scan logs + demographics ─┴─> manifest ──> per-scan analysis ──> comparisons
                                     (who/what       (segment, slab,      (hand vs foot,
-                                     each scan is)   MIP, flow, blobs)    Baseline vs PORH)
+                                     each scan is)   MIP, flow, loops)    Baseline vs PORH)
 ```
 
 ### 1. The data
@@ -100,7 +100,7 @@ For each scan:
 4. **MIP**: the maximum projection over depth gives an en-face map (120 × width).
 5. Measure:
    - **mean slab flow**, the main measure;
-   - **blob count**: bright, roundish spots on the MIP (threshold 75, minimum size
+   - **loop count** (the thesis detector, earlier called "blob count"): bright, roundish spots on the MIP (threshold 75, minimum size
      30, circularity 0.45). Not yet validated as a loop count.
 6. Also record a **flow-vs-depth profile** (mean flow at each depth relative to the
    DEJ) and the epidermis thickness.
@@ -135,14 +135,14 @@ resizing and the analyses.
 
 ### First look at 8 sample scans (mixed phases)
 
-- The blob count mostly tracks how much flow is in the slab (rank correlation 0.86).
+- The loop count mostly tracks how much flow is in the slab (rank correlation 0.86).
 - The phase matters a lot (Baseline vs occlusion vs PORH), so scans can only be
   compared within one phase.
 - No sign of thick callus on the feet: epidermis 26–33 px on every scan.
 
 ### Slab depth (Baseline, 10 patients, hand + foot)
 
-| Slab (px relative to DEJ) | Median blobs | Median slab flow |
+| Slab (px relative to DEJ) | Median loop count | Median slab flow |
 |---|---|---|
 | 0 to +15 | 489 | 20.6 |
 | **−5 to +15** (now default) | **612** | **24.6** |
@@ -160,7 +160,7 @@ resizing and the analyses.
 | Median | Hand | Foot |
 |---|---|---|
 | Slab flow | 23.1 | 26.2 |
-| Blobs | 633 | 534 |
+| Loop count | 633 | 534 |
 | Epidermis thickness | 30.5 px | 32 px |
 
 No consistent difference: within patients it goes both ways.
@@ -170,7 +170,7 @@ No consistent difference: within patients it goes both ways.
 | | Hands | Feet |
 |---|---|---|
 | Slab flow at PORH peak vs Baseline | **×1.7** (1.2–3.3) | ×1.2 |
-| Blobs at PORH peak vs Baseline | ×1.8 | ×1.3 |
+| Loop count at PORH peak vs Baseline | ×1.8 | ×1.3 |
 | PORH peak above normal Baseline variation (2 SD) | **9 / 10** | 5 / 10 |
 | Flow down during occlusion | 6 / 10 | 3 / 10 (**up** in 5 / 10) |
 | Time of peak after the occlusion scan | ~100 s | ~130 s |
@@ -179,7 +179,7 @@ No consistent difference: within patients it goes both ways.
   return over a few minutes.
 - **Feet are weak and inconsistent,** and foot flow often *rises* during occlusion.
   The cuff may not fully stop blood flow to the foot.
-- **Slab flow is a better measure than the blob count:**
+- **Slab flow is a better measure than the loop count:**
   - it varies less between Baseline repeats (10% vs 14–21%);
   - it detects PORH more often (14 vs 10 of 20 visits).
 - The first post-release scan comes about 94 s after the occlusion scan, so the true
@@ -201,9 +201,11 @@ No consistent difference: within patients it goes both ways.
 - **The flow signal is a display overlay,** not the raw OCTA measurement. Raw
   structural/flow exports (`-s`/`-d` files, as used in the bachelor notebook) would
   likely give cleaner loops.
-- **Field of view unknown:** with 120 B-scans per volume, the physical spacing
-  decides whether individual loops can be resolved at all.
-- **Blob count is not validated** against loops counted by eye.
+- **Field of view (from the DICOM headers):** about 5.2 × 5.0 mm. Pixels are
+  4.4 µm in the B-scan (across and in depth), but B-scans are 42 µm apart. A
+  10–20 µm loop therefore appears in only one or two B-scans. The −5 to +15 px slab
+  is about 90 µm thick.
+- **Loop count is not validated** against loops counted by eye.
 - **The segmentation model needs retraining** on a clean, patient-grouped split.
 - October scans differ (image width, lower flow); the scanner settings are unknown.
 
@@ -237,7 +239,7 @@ and resume where they left off if interrupted.
    both sites.
 3. Compare T2DM vs controls: Baseline slab flow and PORH response, keeping the
    October/May session difference in mind.
-4. Validate or drop the blob count.
+4. Validate or drop the loop count (Fiji marking set up: `docs/loop_annotation.md`).
 5. Later:
    - try the flow-vs-depth profile as a scan-quality measure;
    - extract and annotate more frames, then retrain the segmentation model.
