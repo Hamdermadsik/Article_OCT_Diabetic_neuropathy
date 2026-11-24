@@ -1,0 +1,19 @@
+participant_id,initials,group,date,scan_number,phase,protocol_area,condition,excel_column,cohort
+DP-02-DG,DG,DP,2021-05-18,205,Isc,Foot,Flavanol,Isc.1,may_2021
+DP-06-JF,JF,DP,2021-05-07,205,PORH,Hand,Regular,Hand PORH,may_2021
+DP-06-JF,JF,DP,2021-05-14,1780,Baseline,Foot,Flavanol,Foot baseline flavanol,may_2021
+HP-28-JJ,JJ,HP,2021-05-14,1780,PORH,Foot,Regular,Foot PORH,may_2021
+DP-06-JF,JF,DP,2021-05-14,1781,Baseline,Foot,Flavanol,Foot baseline flavanol,may_2021
+HP-28-JJ,JJ,HP,2021-05-14,1781,PORH,Foot,Regular,Foot PORH,may_2021
+DP-06-JF,JF,DP,2021-05-14,1782,Baseline,Foot,Flavanol,Foot baseline flavanol,may_2021
+HP-28-JJ,JJ,HP,2021-05-14,1782,PORH,Foot,Regular,Foot PORH,may_2021
+DP-06-JF,JF,DP,2021-05-14,1783,Baseline,Foot,Flavanol,Foot baseline flavanol,may_2021
+HP-28-JJ,JJ,HP,2021-05-14,1783,PORH,Foot,Regular,Foot PORH,may_2021
+DP-06-JF,JF,DP,2021-05-14,1784,Isc,Foot,Flavanol,Isc.1,may_2021
+HP-28-JJ,JJ,HP,2021-05-14,1784,PORH,Foot,Regular,Foot PORH,may_2021
+DP-06-JF,JF,DP,2021-05-14,1785,PORH,Foot,Flavanol,Foot PORH.1,may_2021
+HP-28-JJ,JJ,HP,2021-05-14,1785,PORH,Foot,Regular,Foot PORH,may_2021
+HP-37-LB,LB,HP,2021-06-04,4185,Baseline,Hand,Flavanol,Hand Baseline Flavanol,may_2021
+HP-60-PW,PW,HP,2021-06-04,4185,PORH,Foot,Flavanol,Foot PORH.1,may_2021
+AG,AG,,,263,Baseline,Foot,Regular,Imaging settings.1,october_2020
+VM,VM,,,263,Isc,Hand,Regular,Imaging settings,october_2020

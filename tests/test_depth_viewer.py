@@ -2,15 +2,19 @@
 import json
 import base64
 import threading
+import csv
+import re
+import time
+from pathlib import Path
 from urllib.error import HTTPError
-from urllib.request import urlopen
+from urllib.request import urlopen, Request
 
 import numpy as np
 import cv2
 import pytest
 
 from depth_slabs import project_slab
-from depth_viewer import DepthVolume, make_server
+from depth_viewer import DepthVolume, make_server, ScanBrowser, scan_catalog
 
 
 def sample():
@@ -116,6 +120,106 @@ def test_http_and_invalid_parameters():
             with pytest.raises(HTTPError) as error:
                 urlopen(base + "/api/frame?" + query)
             assert error.value.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_catalog_preserves_canonical_paths_and_searches_multiple_terms(tmp_path):
+    manifest = tmp_path / "scans.csv"
+    with manifest.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["filename", "filepath", "is_duplicate_of"])
+        writer.writeheader()
+        writer.writerows([
+            {"filename": "JF_Right Instep_S244.dcm", "filepath": "/drive/JF_Right Instep_S244.dcm"},
+            {"filename": "JF_Right Instep_S244.dcm", "filepath": "/copy/JF_Right Instep_S244.dcm", "is_duplicate_of": "original"},
+            {"filename": "AC_Right Hand_S1.dcm", "filepath": "/drive/AC_Right Hand_S1.dcm"},
+        ])
+    catalog = scan_catalog(manifest)
+    assert len(catalog) == 2
+    browser = ScanBrowser(sample(), catalog)
+    match = browser.search("jf INSTEP 244")
+    assert match["total"] == 1
+    assert catalog[match["items"][0]["id"]]["path"] == Path("/drive/JF_Right Instep_S244.dcm")
+    assert browser.search("not-a-scan")["total"] == 0
+
+
+def test_search_caps_results_without_losing_total():
+    catalog = {str(i): {"name": f"scan_{i}.dcm", "path": Path(f"/{i}.dcm")} for i in range(150)}
+    browser = ScanBrowser(sample(), catalog)
+    assert len(browser.search("scan_")["items"]) == 100
+    assert browser.search("scan_")["total"] == 150
+
+
+def test_scan_switch_loads_in_background_and_guards_old_frames():
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+    def loader(path, progress):
+        progress(3, 120)
+        entered.set()
+        assert release.wait(5)
+        volume = sample()
+        volume.name = path.name
+        finished.set()
+        return volume
+    browser = ScanBrowser(sample(), {"old": {"name": "scan", "path": Path("old.dcm")},
+                                    "new": {"name": "next.dcm", "path": Path("next.dcm")}}, loader)
+    try:
+        browser.select("new")
+        assert entered.wait(5)
+        info = browser.info()
+        assert info["scan_id"] == "old"
+        assert info["loading"]["done"] == 3
+        with pytest.raises(RuntimeError, match="Another"):
+            browser.select("old")
+        browser.select("new")  # Repeated selection does not spawn another load.
+    finally:
+        release.set()
+    assert finished.wait(5)
+    for _ in range(100):
+        if not browser.info()["loading"]:
+            break
+        time.sleep(.01)
+    assert browser.info()["scan_id"] == "new"
+    with pytest.raises(RuntimeError, match="changed"):
+        browser.frame(0, 1, 0, "old")
+    assert browser.frame(0, 1, 0, "new")["scan_id"] == "new"
+
+
+def test_failed_load_preserves_previous_scan():
+    def loader(path, progress):
+        raise OSError("Drive disconnected")
+    browser = ScanBrowser(sample(), {"new": {"name": "missing.dcm", "path": Path("missing.dcm")}}, loader)
+    browser.select("new")
+    for _ in range(100):
+        if not browser.info()["loading"]:
+            break
+        time.sleep(.01)
+    assert browser.info()["name"] == "scan"
+    assert browser.info()["load_error"] == "Drive disconnected"
+    assert browser.volume is not None
+
+
+def test_selection_endpoint_requires_token_and_rejects_arbitrary_paths():
+    server = make_server(sample(), port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        page = urlopen(base).read().decode()
+        token = json.loads(re.search(r"const scanConfig=(\{.*?\});", page).group(1))["token"]
+        scans = json.loads(urlopen(base + "/api/scans?q=scan").read())
+        assert scans["total"] == 1
+        key = scans["items"][0]["id"]
+        for provided, selection, expected in [(None, key, 403), (token, "/etc/passwd", 400)]:
+            request = Request(base + "/api/select", data=json.dumps({"id": selection}).encode(),
+                              headers={"X-Viewer-Token": provided or ""})
+            with pytest.raises(HTTPError) as error:
+                urlopen(request)
+            assert error.value.code == expected
+        request = Request(base + "/api/select", data=json.dumps({"id": key}).encode(),
+                          headers={"X-Viewer-Token": token})
+        assert json.loads(urlopen(request).read())["scan_id"] == key
     finally:
         server.shutdown()
         server.server_close()

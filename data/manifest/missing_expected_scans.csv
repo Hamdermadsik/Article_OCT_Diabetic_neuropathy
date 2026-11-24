@@ -1,0 +1,46 @@
+participant_id,initials,group,date,scan_number,phase,protocol_area,condition,excel_column,cohort
+DP-02-DG,DG,DP,2021-05-18,205,Isc,Foot,Flavanol,Isc.1,may_2021
+DP-02-DG,DG,DP,2021-05-18,1981,Baseline,Hand,Regular,Hand Baseline,may_2021
+DP-02-DG,DG,DP,2021-05-18,1982,Baseline,Hand,Regular,Hand Baseline,may_2021
+DP-03-JR,JR,DP,2021-05-11,359,PORH,Hand,Regular,Hand PORH,may_2021
+DP-03-JR,JR,DP,2021-05-11,1419,PORH,Foot,Flavanol,Foot PORH.1,may_2021
+DP-05-TA,TA,DP,2021-05-11,1425,Baseline,Hand,Regular,Hand Baseline,may_2021
+DP-05-TA,TA,DP,2021-05-18,2137,PORH,Foot,Flavanol,Foot PORH.1,may_2021
+DP-12-SR,SR,DP,2021-06-02,3897,Baseline,Hand,Flavanol,Hand Baseline Flavanol,may_2021
+DP-13-DH,DH,DP,2021-05-17,1885,Baseline,Hand,Flavanol,Hand Baseline Flavanol,may_2021
+DP-14-AT,AT,DP,2021-03-31,34613464,PORH,Foot,Regular,Foot PORH,may_2021
+HP-28-JJ,JJ,HP,2021-05-14,1780,PORH,Foot,Regular,Foot PORH,may_2021
+HP-28-JJ,JJ,HP,2021-05-14,1781,PORH,Foot,Regular,Foot PORH,may_2021
+HP-28-JJ,JJ,HP,2021-05-14,1782,PORH,Foot,Regular,Foot PORH,may_2021
+HP-28-JJ,JJ,HP,2021-05-14,1783,PORH,Foot,Regular,Foot PORH,may_2021
+HP-28-JJ,JJ,HP,2021-05-14,1784,PORH,Foot,Regular,Foot PORH,may_2021
+HP-28-JJ,JJ,HP,2021-05-14,1785,PORH,Foot,Regular,Foot PORH,may_2021
+HP-32-VF,VF,HP,2021-05-12,1543,Isc,Hand,Flavanol,Isc,may_2021
+HP-32-VF,VF,HP,2021-05-12,1544,PORH,Hand,Flavanol,Hand PORH.1,may_2021
+HP-32-VF,VF,HP,2021-05-12,1587,Isc,Foot,Flavanol,Isc.1,may_2021
+HP-35-LM,LM,HP,2021-03-31,3590,PORH,Hand,Regular,Hand PORH,may_2021
+HP-35-LM,LM,HP,2021-03-31,3625,PORH,Foot,Flavanol,Foot PORH.1,may_2021
+HP-37-LB,LB,HP,2021-06-04,4185,Baseline,Hand,Flavanol,Hand Baseline Flavanol,may_2021
+HP-40-HL,HL,HP,2021-05-20,2291,Baseline,Hand,Regular,Hand Baseline,may_2021
+HP-40-HL,HL,HP,2021-05-20,2292,Baseline,Hand,Regular,Hand Baseline,may_2021
+HP-40-HL,HL,HP,2021-05-20,2314,PORH,Foot,Regular,Foot PORH,may_2021
+HP-40-HL,HL,HP,2021-05-20,2362,Baseline,Foot,Flavanol,Foot baseline flavanol,may_2021
+HP-51-JK,JK,HP,2021-03-27,66,Baseline,Hand,Flavanol,Hand Baseline Flavanol,may_2021
+HP-55-CS,CS,HP,2021-03-31,35665,Baseline,Foot,Regular,Foot Baseline,may_2021
+HP-56-MO,MO,HP,2021-06-02,3935,Isc,Hand,Flavanol,Isc,may_2021
+AG,AG,,,263,Baseline,Foot,Regular,Imaging settings.1,october_2020
+MB,MB,,,665,Laying Down,,Additional,Sheet2,october_2020
+MB,MB,,,666,Laying Down,,Additional,Sheet2,october_2020
+MB,MB,,,667,Laying Down,,Additional,Sheet2,october_2020
+MB,MB,,,668,Laying Down,,Additional,Sheet2,october_2020
+MB,MB,,,669,Laying Down,,Additional,Sheet2,october_2020
+MB,MB,,,670,Sitting up,,Additional,Sheet2,october_2020
+MB,MB,,,671,Sitting up,,Additional,Sheet2,october_2020
+MB,MB,,,672,Sitting up,,Additional,Sheet2,october_2020
+MB,MB,,,673,Sitting up,,Additional,Sheet2,october_2020
+MB,MB,,,674,Sitting up,,Additional,Sheet2,october_2020
+MB,MB,,,675,Legs vertical,,Additional,Sheet2,october_2020
+MB,MB,,,676,Legs vertical,,Additional,Sheet2,october_2020
+MB,MB,,,677,Legs vertical,,Additional,Sheet2,october_2020
+MB,MB,,,678,Legs vertical,,Additional,Sheet2,october_2020
+MB,MB,,,679,Legs vertical,,Additional,Sheet2,october_2020

@@ -49,12 +49,12 @@ aside{padding:22px 20px;background:white;border-left:1px solid #dce1dc;min-width
 <header><div><h1>MIP-kvalitetskontrol</h1><div class="muted" id="cohort"></div></div><div class="header-right"><div><span id="counts"></span><div class="muted" id="generation-counts"></div></div><progress id="progress" max="1" value="0"></progress><a href="/api/export" download>Eksportér CSV</a></div></header>
 <div id="notice" role="status"></div><div id="error" role="alert"></div>
 <div class="workspace">
-<nav aria-label="Billeder"><select class="filter" id="filter" aria-label="Filtrér vurderinger"><option value="all">Alle billeder</option><option value="unreviewed">Ikke vurderet</option><option value="use">Brug</option><option value="discard">Kassér</option><option value="unsure">Måske / ved ikke</option></select><div id="list" class="item-list"></div></nav>
+<nav aria-label="Billeder"><select class="filter" id="filter" aria-label="Filtrér vurderinger"><option value="all">Alle billeder</option><option value="unreviewed">Ikke vurderet</option><option value="use">Brug</option><option value="discard">Kassér</option><option value="unsure">Måske / ved ikke</option><option value="segmentation">Forkert DEJ</option></select><div id="list" class="item-list"></div></nav>
 <main><div class="scan-heading"><div><h2 id="name">Indlæser…</h2><div id="status"></div></div><div class="pager"><button class="icon" id="previous" title="Forrige billede" aria-label="Forrige billede">&larr;</button><button class="icon" id="next" title="Næste billede" aria-label="Næste billede">&rarr;</button></div></div>
 <div class="toolbar"><button class="icon" id="zoom-out" title="Zoom ud" aria-label="Zoom ud">&minus;</button><span id="zoom-label" class="muted">100 %</span><button class="icon" id="zoom-in" title="Zoom ind" aria-label="Zoom ind">+</button><button class="icon" id="fit" title="Tilpas billedet" aria-label="Tilpas billedet">&#x2922;</button><span class="spacer"></span><span class="muted" id="range"></span></div>
 <div id="viewport" class="viewport"><div class="image-wrap"><img id="mip" alt="MIP til kvalitetsvurdering"></div></div><div class="image-meta muted"><span id="dimensions"></span><span id="valid"></span></div>
 <section class="bscan-section" aria-label="B-scan til segmenteringskontrol">
- <div class="bscan-header"><h2>B-scan · Segmentering</h2><label class="dej-fade" for="dej-opacity">DEJ<input id="dej-opacity" type="range" min="0" max="100" step="1" value="50" aria-label="DEJ synlighed"><output id="dej-opacity-value" for="dej-opacity">50 %</output></label></div>
+ <div class="bscan-header"><h2>B-scan · Segmentering</h2><label class="check" title="Vis scannerens røde OCTA-overlay"><input id="octa-visible" type="checkbox" checked>OCTA</label><label class="dej-fade" for="dej-opacity">DEJ<input id="dej-opacity" type="range" min="0" max="100" step="1" value="50" aria-label="DEJ synlighed"><output id="dej-opacity-value" for="dej-opacity">50 %</output></label></div>
  <div class="toolbar"><button class="icon" id="bscan-zoom-out" title="Zoom ud i B-scan" aria-label="Zoom ud i B-scan">&minus;</button><span id="bscan-zoom-label" class="muted">100 %</span><button class="icon" id="bscan-zoom-in" title="Zoom ind i B-scan" aria-label="Zoom ind i B-scan">+</button><button class="icon" id="bscan-fit" title="Tilpas B-scan" aria-label="Tilpas B-scan">&#x2922;</button><a id="bscan-open" class="icon image-open" target="_blank" rel="noopener" title="Åbn B-scan i fuld størrelse" aria-label="Åbn B-scan i fuld størrelse">&#8599;</a></div>
  <div id="bscan-viewport" class="bscan-view"><div id="bscan-link" class="bscan-stack"><img id="bscan" alt="Originalt midterste B-scan"><img id="bscan-overlay" alt="" aria-hidden="true"></div></div>
  <div id="bscan-empty" hidden>B-scan er ikke tilgængeligt for dette scan.</div>
@@ -84,20 +84,36 @@ const labels={use:'Brug',discard:'Kassér',unsure:'Måske / ved ikke',unreviewed
 let state, current, busy=false, dirty=false, zoom=1, bscanZoom=1, imageReady=false, bscanReady=true, activeFilter='all';
 function error(message){$('error').textContent=message;$('error').style.display=message?'block':'none'}
 function statusOf(item){return state.reviews[item.id]?.status||'unreviewed'}
-function visible(){const filter=$('filter').value;return state.items.filter(i=>filter==='all'||statusOf(i)===filter)}
+function matchesFilter(item,filter=$('filter').value){
+ if(filter==='segmentation')return (state.reviews[item.id]?.reasons||[]).includes('segmentation');
+ return filter==='all'||statusOf(item)===filter;
+}
+function visible(){return state.items.filter(i=>matchesFilter(i))}
 function title(item){return config.showNames?item.filename:`Scan ${String(state.items.indexOf(item)+1).padStart(4,'0')}`}
-function renderList(){const list=$('list');list.replaceChildren();for(const item of visible()){const b=document.createElement('button');b.className='scan status-'+statusOf(item)+(item.id===current?.id?' active':'');b.setAttribute('aria-current',item.id===current?.id?'true':'false');const dot=document.createElement('span');dot.className='dot '+statusOf(item);const name=document.createElement('span');name.className='scan-label';name.textContent=title(item);const mark=document.createElement('span');mark.className='count';mark.textContent=statusOf(item)==='unreviewed'?'':statusOf(item)==='use'?'✓':statusOf(item)==='discard'?'×':'?';b.append(dot,name,mark);b.title=labels[statusOf(item)];b.onclick=()=>select(item);b.disabled=busy;list.append(b)}if(!list.children.length){const e=document.createElement('div');e.className='empty';e.textContent='Ingen billeder';list.append(e)}const done=state.items.filter(i=>statusOf(i)!=='unreviewed').length;$('counts').textContent=`${done} / ${state.items.length} vurderet`;$('progress').max=state.items.length;$('progress').value=done;const rows=visible();const at=rows.findIndex(i=>i.id===current?.id);$('previous').disabled=busy||at<=0;$('next').disabled=busy||at<0||at>=rows.length-1}
+function renderList(){const list=$('list'),top=list.scrollTop,left=list.scrollLeft;list.replaceChildren();for(const item of visible()){const b=document.createElement('button');b.className='scan status-'+statusOf(item)+(item.id===current?.id?' active':'');b.setAttribute('aria-current',item.id===current?.id?'true':'false');const dot=document.createElement('span');dot.className='dot '+statusOf(item);const name=document.createElement('span');name.className='scan-label';name.textContent=title(item);const mark=document.createElement('span');mark.className='count';mark.textContent=statusOf(item)==='unreviewed'?'':statusOf(item)==='use'?'✓':statusOf(item)==='discard'?'×':'?';b.append(dot,name,mark);b.title=labels[statusOf(item)];b.onclick=()=>select(item);b.disabled=busy;list.append(b)}if(!list.children.length){const e=document.createElement('div');e.className='empty';e.textContent='Ingen billeder';list.append(e)}list.scrollTop=top;list.scrollLeft=left;const done=state.items.filter(i=>statusOf(i)!=='unreviewed').length;$('counts').textContent=`${done} / ${state.items.length} vurderet`;$('progress').max=state.items.length;$('progress').value=done;const rows=visible();const at=rows.findIndex(i=>i.id===current?.id);$('previous').disabled=busy||at<=0;$('next').disabled=busy||at<0||at>=rows.length-1}
+function revealCurrent(){
+ const list=$('list'),active=list.querySelector('[aria-current="true"]');if(!active)return;
+ const row=active.getBoundingClientRect(),box=list.getBoundingClientRect();
+ if(row.top<box.top)list.scrollTop-=box.top-row.top;else if(row.bottom>box.bottom)list.scrollTop+=row.bottom-box.bottom;
+ if(row.left<box.left)list.scrollLeft-=box.left-row.left;else if(row.right>box.right)list.scrollLeft+=row.right-box.right;
+}
 function confirmLeave(){return !dirty||window.confirm('Noten eller årsagen er ikke gemt. Forlad billedet?')}
 function select(item,force=false){
  if(busy||(!force&&!confirmLeave()))return;current=item;dirty=false;imageReady=false;error('');
  mipNavigation.reset();
+ if(!item){
+  $('name').textContent='Ingen billeder i dette udvalg';$('status').textContent='';$('note').value='';
+  for(const check of $('reasons').querySelectorAll('input'))check.checked=false;
+  $('save-state').textContent='';$('save-state').className='';$('dimensions').textContent='';$('valid').textContent='';
+  $('mip').removeAttribute('src');$('viewport').classList.remove('loading');updateBscan();setButtons();return;
+ }
  $('name').textContent=item.filename;const record=state.reviews[item.id];$('status').textContent=labels[statusOf(item)];
  $('note').value=record?.note||'';for(const check of $('reasons').querySelectorAll('input'))check.checked=(record?.reasons||[]).includes(check.value);
  $('save-state').textContent=record?'Gemt '+new Date(record.reviewed_at).toLocaleString('da-DK'):'';$('save-state').className='';
  $('range').textContent='';$('dimensions').textContent=`${item.width} × ${item.height} pixels`;$('valid').textContent='';
- $('cohort').textContent='QC-MIP · DEJ +0 til +15 px · Vurdering af hele scannet';
+ $('cohort').textContent='QC-MIP · DEJ −5 til +15 px · Vurdering af hele scannet';
  updateBscan();
- $('viewport').classList.add('loading');$('mip').src='/api/image/'+item.id;zoom=1;renderList();setButtons();
+ $('viewport').classList.add('loading');$('mip').src='/api/image/'+item.id;zoom=1;setButtons();revealCurrent();
 }
 function updateBscan(){
  const info=current?.bscan;
@@ -105,18 +121,24 @@ function updateBscan(){
  bscanZoom=1;$('bscan-zoom-label').textContent='100 %';
  $('bscan-viewport').scrollTop=0;$('bscan-viewport').scrollLeft=0;
  $('bscan-viewport').style.display=info?'flex':'none';
- $('bscan-link').style.display=info?'block':'none';$('bscan-empty').hidden=!!info;$('dej-opacity').disabled=!info;
+ $('bscan-link').style.display=info?'block':'none';$('bscan-empty').hidden=!!info;$('dej-opacity').disabled=!info;$('octa-visible').disabled=!info;
  $('bscan-meta').textContent=info?`B-scan ${info.index} / ${info.num_frames-1} · Midterste tværsnit${info.recomputed?' · DEJ genberegnet til visning':''}`:'';
  if(!info){bscanReady=true;$('bscan').removeAttribute('src');$('bscan-overlay').removeAttribute('src');return}
+ loadBscanImages();
+}
+function loadBscanImages(){
+ if(!current?.bscan)return;
  bscanReady=false;$('bscan-link').classList.add('loading');setButtons();
- $('bscan').src=`/api/bscan/${current.id}?overlay=0`;
- $('bscan-overlay').src=`/api/bscan/${current.id}?overlay=1`;
+ const octa=$('octa-visible').checked?'1':'0';
+ $('bscan').src=`/api/bscan/${current.id}?overlay=0&octa=${octa}`;
+ $('bscan-overlay').src=`/api/bscan/${current.id}?overlay=1&octa=${octa}`;
  fadeDej();
 }
+$('octa-visible').onchange=loadBscanImages;
 function fadeDej(){
  const value=Number($('dej-opacity').value);
  $('bscan-overlay').style.opacity=String(value/100);$('dej-opacity-value').textContent=`${value} %`;
- if(current?.bscan)$('bscan-open').href=`/api/bscan/${current.id}?opacity=${value/100}`;
+ if(current?.bscan)$('bscan-open').href=`/api/bscan/${current.id}?opacity=${value/100}&octa=${$('octa-visible').checked?'1':'0'}`;
 }
 $('dej-opacity').oninput=fadeDej;
 function fitBscan(){
@@ -193,7 +215,7 @@ function mouseNavigation(box,image,getZoom,setZoom,resize,ready){
 }
 const mipNavigation=mouseNavigation($('viewport'),$('mip'),()=>zoom,value=>{zoom=value},fit,()=>imageReady);
 const bscanNavigation=mouseNavigation($('bscan-viewport'),$('bscan-link'),()=>bscanZoom,value=>{bscanZoom=value},fitBscan,()=>!!current?.bscan&&bscanReady);
-function setButtons(){for(const button of document.querySelectorAll('[data-status]'))button.disabled=busy||!imageReady||!bscanReady;$('reset').disabled=busy||!imageReady||!bscanReady;syncZoomControls();for(const input of [$('note'),$('filter'),...$('reasons').querySelectorAll('input')])input.disabled=busy;renderList()}
+function setButtons(){for(const button of document.querySelectorAll('[data-status]'))button.disabled=busy||!current||!imageReady||!bscanReady;$('reset').disabled=busy||!current||!imageReady||!bscanReady;syncZoomControls();$('filter').disabled=busy;for(const input of [$('note'),...$('reasons').querySelectorAll('input')])input.disabled=busy||!current;renderList()}
 async function save(status){
  if(busy||!current||!imageReady)return;
  const reasons=[...$('reasons').querySelectorAll('input:checked')].map(i=>i.value);
@@ -203,8 +225,18 @@ async function save(status){
   const response=await fetch('/api/review',{method:'POST',headers:{'Content-Type':'application/json','X-Review-Token':config.token},body:JSON.stringify({id:item.id,status,reasons,note:$('note').value,revision:state.revision})});
   const result=await response.json();if(!response.ok)throw Error(result.error||'Kunne ikke gemme');
   state.revision=result.revision;state.reviews[item.id]=result.review;dirty=false;busy=false;
-  const next=before.slice(pos+1).find(i=>statusOf(i)==='unreviewed')||before.slice(0,pos).find(i=>statusOf(i)==='unreviewed');
-  if(next)select(next,true);else{select(item,true);$('save-state').textContent='Gemt · Ingen flere uvurderede i dette udvalg'}
+  const filter=$('filter').value;
+  const next=filter==='all'
+   ?before.slice(pos+1).find(i=>statusOf(i)==='unreviewed')||before.slice(0,pos).find(i=>statusOf(i)==='unreviewed')
+   :before.slice(pos+1).find(i=>matchesFilter(i,filter));
+  if(next)select(next,true);
+  else{
+   const remaining=visible();
+   const last=matchesFilter(item,filter)?item:before.slice(0,pos).reverse().find(i=>matchesFilter(i,filter));
+   select(last||remaining[0]||null,true);
+   $('save-state').textContent=filter==='all'?'Gemt · Ingen flere uvurderede i dette udvalg'
+    :remaining.length?'Gemt · Sidste billede i dette udvalg':'Gemt · Ingen billeder tilbage i dette udvalg';
+  }
   if(result.warning)error(result.warning);
  }catch(e){error(e.message);$('save-state').textContent='Ikke gemt';busy=false}
  setButtons();
@@ -214,7 +246,21 @@ for(const b of document.querySelectorAll('[data-status]'))b.onclick=()=>save(b.d
 $('reset').onclick=()=>{if(window.confirm('Nulstil vurderingen af dette billede?'))save('unreviewed')};
 for(const input of [$('note'),...$('reasons').querySelectorAll('input')])input.addEventListener('input',()=>{dirty=true;$('save-state').textContent='Ændringer er ikke gemt';$('save-state').className='unsaved'});
 $('previous').onclick=()=>{const items=visible(),i=items.findIndex(x=>x.id===current.id);if(i>0)select(items[i-1])};$('next').onclick=()=>{const items=visible(),i=items.findIndex(x=>x.id===current.id);if(i<items.length-1)select(items[i+1])};
-$('filter').onchange=()=>{if(!confirmLeave()){$('filter').value=activeFilter;renderList();return}activeFilter=$('filter').value;const items=visible();if(items.length&&!items.some(i=>i.id===current?.id))select(items[0],true);renderList()};
+$('filter').onchange=()=>{if(!confirmLeave()){$('filter').value=activeFilter;renderList();return}activeFilter=$('filter').value;const items=visible();if(!items.some(i=>i.id===current?.id))select(items[0]||null,true);else{renderList();revealCurrent()}};
 $('zoom-in').onclick=()=>{zoom=Math.min(8,zoom*1.4);fit()};$('zoom-out').onclick=()=>{zoom=Math.max(1,zoom/1.4);fit()};$('fit').onclick=()=>{zoom=1;mipNavigation.reset();fit()};window.addEventListener('resize',fit);window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
+let polling=false;
+setInterval(async()=>{
+ if(!state||polling||busy)return;
+ polling=true;
+ try{
+  const response=await fetch('/api/state');if(!response.ok)return;
+  const latest=await response.json();
+  const g=latest.generation;if(g?.total)$('generation-counts').textContent=`MIP: ${g.ready} / ${g.total} klar · ${g.failed} fejl`;
+  if(busy||latest.revision!==state.revision)return;
+  // Refresh the queue only; leave the current image, unsaved fields and zoom intact.
+  state.items=latest.items;renderList();
+ }catch(e){/* The next poll retries a temporarily unavailable server. */}
+ finally{polling=false}
+},5000);
 (async()=>{try{const r=await fetch('/api/state');if(!r.ok)throw Error('Kunne ikke hente vurderingslisten');state=await r.json();$('results-path').textContent=state.results_path;const g=state.generation;if(g?.total)$('generation-counts').textContent=`MIP: ${g.ready} / ${g.total} klar · ${g.failed} fejl`;if(config.warnings.length){$('notice').textContent=`${config.warnings.length} filer blev sprunget over. `+config.warnings.join(' · ');$('notice').style.display='block'}select(state.items.find(i=>statusOf(i)==='unreviewed')||state.items[0],true)}catch(e){error(e.message)}})();
 </script></body></html>

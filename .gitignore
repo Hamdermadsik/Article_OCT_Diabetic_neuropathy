@@ -34,7 +34,25 @@ outputs/
 #ignore models 
 models/
 # Raw and processed data — add specific files to track if needed
-data/
+data/*
+!data/manifest/
+data/manifest/*
+!data/manifest/ambiguous_initials.csv
+!data/manifest/approved_scan_filenames.csv
+!data/manifest/demographics_issues.csv
+!data/manifest/drive_index.csv
+!data/manifest/frames.csv
+!data/manifest/identity_review_candidates.csv
+!data/manifest/manifest_build_errors.csv
+!data/manifest/mip_generation.csv
+!data/manifest/missing_expected_scans.csv
+!data/manifest/patients.csv
+!data/manifest/qc_reviews.json
+!data/manifest/scan_log_issues.csv
+!data/manifest/scan_number_collisions.csv
+!data/manifest/scans.csv
+!data/manifest/scans_for_analysis.csv
+!data/manifest/segmentation_review_candidates.csv
 data/raw/*
 data/processed/*
 !data/raw/.gitkeep

@@ -2,7 +2,10 @@
 
 import argparse
 import base64
+import csv
+import hashlib
 import json
+import secrets
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -104,11 +107,13 @@ def encode(image):
     return "data:image/png;base64," + base64.b64encode(data).decode()
 
 
-def load_volume(path, boundaries=None):
+def load_volume(path, boundaries=None, progress=None):
     from papi import import_dicom, test_model_on_sample_image
     from model_utils import default_model_path, load_pytorch_model
     import torch
 
+    if progress:
+        progress(0, 0)
     volume, _, _ = import_dicom(path)
     candidate = boundaries or ROOT / "outputs/dej_depth_test" / f"{path.stem}_depth_slabs.npz"
     if candidate.exists():
@@ -125,14 +130,109 @@ def load_volume(path, boundaries=None):
         for i, image in enumerate(volume):
             mask = test_model_on_sample_image(model, image, device)
             dej[i], surface[i], _ = extract_dej(mask)
+            if progress:
+                progress(i + 1, len(volume))
             if i % 10 == 0 or i == len(volume) - 1:
                 print(f"Segmenting {i + 1}/{len(volume)} B-scans", flush=True)
     return DepthVolume(volume, dej, surface, path.name)
 
 
-def make_server(volume, port=8767):
-    page = Path(__file__).with_name("depth_viewer.html").read_bytes()
-    work = threading.Lock()
+def scan_catalog(manifest, initial_path=None):
+    """Use manifest paths only; duplicate file copies remain one selectable scan."""
+    by_name = {}
+    manifest = Path(manifest)
+    if manifest.exists():
+        with manifest.open(newline="", encoding="utf-8-sig") as handle:
+            for row in csv.DictReader(handle):
+                name, source = row.get("filename"), row.get("filepath")
+                if not name or not source:
+                    continue
+                duplicate = bool(row.get("is_duplicate_of", ""))
+                if name in by_name and duplicate:
+                    continue
+                path = Path(source)
+                if not path.is_absolute():
+                    path = ROOT / path
+                by_name[name] = {"path": path, "name": name}
+    if initial_path is not None:
+        path = Path(initial_path).resolve()
+        by_name[path.name] = {"path": path, "name": path.name}
+    return {hashlib.sha256(name.encode()).hexdigest(): entry
+            for name, entry in sorted(by_name.items())}
+
+
+class ScanBrowser:
+    def __init__(self, volume, catalog=None, loader=None):
+        self.catalog = catalog or {"initial": {"name": volume.name, "path": Path(volume.name)}}
+        self.active = next((key for key, entry in self.catalog.items() if entry["name"] == volume.name), "initial")
+        if self.active not in self.catalog:
+            self.catalog[self.active] = {"name": volume.name, "path": Path(volume.name)}
+        self.volume = volume
+        self.loader = loader or (lambda path, progress: load_volume(path, progress=progress))
+        self.lock = threading.Lock()
+        self.loading = None
+        self.load_error = None
+
+    def info(self):
+        with self.lock:
+            v = self.volume
+            return {"name": v.name, "scan_id": self.active, "minimum": v.minimum,
+                    "maximum": v.maximum, "frames": v.n, "width": v.w, "height": v.h,
+                    "reference": "skin_surface", "loading": dict(self.loading) if self.loading else None,
+                    "load_error": self.load_error}
+
+    def search(self, query):
+        terms = query.casefold().split()
+        matches = [{"id": key, "name": entry["name"]} for key, entry in self.catalog.items()
+                   if all(term in entry["name"].casefold() for term in terms)]
+        return {"items": matches[:100], "total": len(matches)}
+
+    def select(self, key):
+        with self.lock:
+            if key not in self.catalog:
+                raise ValueError("Unknown scan")
+            if self.loading:
+                if self.loading["id"] == key:
+                    return
+                raise RuntimeError("Another scan is loading")
+            self.load_error = None
+            if key == self.active:
+                return
+            entry = self.catalog[key]
+            self.loading = {"id": key, "name": entry["name"], "done": 0, "total": 0}
+
+        def progress(done, total):
+            with self.lock:
+                self.loading.update(done=done, total=total)
+
+        def load():
+            try:
+                loaded = self.loader(entry["path"], progress)
+                with self.lock:
+                    self.volume, self.active = loaded, key
+            except Exception as error:
+                with self.lock:
+                    self.load_error = str(error)
+            finally:
+                with self.lock:
+                    self.loading = None
+
+        threading.Thread(target=load, name="depth-scan-loader", daemon=True).start()
+
+    def frame(self, start, thickness, index, key=None):
+        with self.lock:
+            if key is not None and key != self.active:
+                raise RuntimeError("The active scan changed; reload its metadata")
+            result = self.volume.frame(start, thickness, index)
+            result["scan_id"] = self.active
+            return result
+
+
+def make_server(volume, port=8767, catalog=None, loader=None):
+    browser = ScanBrowser(volume, catalog, loader)
+    token = secrets.token_urlsafe(32)
+    page = Path(__file__).with_name("depth_viewer.html").read_text()
+    page = page.replace("/*SCAN_CONFIG*/", json.dumps({"token": token}))
 
     class Handler(BaseHTTPRequestHandler):
         def respond(self, body, kind="application/json", status=200):
@@ -150,25 +250,48 @@ def make_server(volume, port=8767):
         def do_GET(self):
             request = urlparse(self.path)
             if request.path == "/":
-                self.respond(page, "text/html; charset=utf-8")
+                self.respond(page.encode(), "text/html; charset=utf-8")
             elif request.path == "/api/info":
-                self.respond(json.dumps({"name": volume.name, "minimum": volume.minimum,
-                                         "maximum": volume.maximum, "frames": volume.n,
-                                         "width": volume.w, "height": volume.h,
-                                         "reference": "skin_surface"}).encode())
+                self.respond(json.dumps(browser.info()).encode())
+            elif request.path == "/api/scans":
+                query = parse_qs(request.query).get("q", [""])[0]
+                self.respond(json.dumps(browser.search(query)).encode())
             elif request.path == "/api/frame":
                 query = parse_qs(request.query)
                 try:
                     start = int(query.get("start", ["0"])[0])
                     thickness = int(query.get("thickness", ["5"])[0])
-                    index = int(query.get("index", [str(volume.n // 2)])[0])
-                    with work:
-                        frame = volume.frame(start, thickness, index)
+                    index = int(query.get("index", [str(browser.info()["frames"] // 2)])[0])
+                    key = query.get("scan_id", [None])[0]
+                    frame = browser.frame(start, thickness, index, key)
                     self.respond(json.dumps(frame).encode())
+                except RuntimeError as error:
+                    self.respond(json.dumps({"error": str(error)}).encode(), status=409)
                 except ValueError as error:
                     self.respond(json.dumps({"error": str(error)}).encode(), status=400)
             else:
                 self.respond(b"Not found", "text/plain", 404)
+
+        def do_POST(self):
+            if urlparse(self.path).path != "/api/select":
+                self.respond(b"Not found", "text/plain", 404)
+                return
+            if self.headers.get("X-Viewer-Token") != token:
+                self.respond(b"Forbidden", "text/plain", 403)
+                return
+            try:
+                size = int(self.headers.get("Content-Length", "0"))
+                if not 0 < size <= 4096:
+                    raise ValueError("Invalid request size")
+                data = json.loads(self.rfile.read(size))
+                if not isinstance(data, dict) or not isinstance(data.get("id"), str):
+                    raise ValueError("Invalid scan selection")
+                browser.select(data["id"])
+                self.respond(json.dumps(browser.info()).encode())
+            except RuntimeError as error:
+                self.respond(json.dumps({"error": str(error)}).encode(), status=409)
+            except (ValueError, UnicodeDecodeError) as error:
+                self.respond(json.dumps({"error": str(error)}).encode(), status=400)
 
         def log_message(self, *args):
             pass
@@ -180,6 +303,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dicom", nargs="?", type=Path, default=DEFAULT_SCAN)
     parser.add_argument("--boundaries", type=Path)
+    parser.add_argument("--manifest", type=Path, default=ROOT / "data/manifest/scans.csv")
     parser.add_argument("--port", type=int, default=8767)
     parser.add_argument("--open", action="store_true")
     args = parser.parse_args()
@@ -189,7 +313,7 @@ def main():
         parser.error(str(error))
     for port in range(args.port, min(args.port + 20, 65536)):
         try:
-            server = make_server(volume, port)
+            server = make_server(volume, port, catalog=scan_catalog(args.manifest, args.dicom))
             break
         except OSError as error:
             if error.errno not in (48, 98):

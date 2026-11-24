@@ -39,6 +39,19 @@ def _patients(*rows):
 
 
 class TestSelectVisits:
+    def test_only_qc_approved_scans_are_used(self):
+        scans = pd.DataFrame(_visit_scans("A", "Hand", 100) + _visit_scans("A", "Foot", 200))
+        scans["analysis_eligible"] = "True"
+        scans.loc[scans["scan_number"].isin([100, 106]), "analysis_eligible"] = "False"
+        selected = select_visits(scans, _patients(("A", "HP")), n_patients=1)
+        assert len(selected) == 22
+        assert not set(selected["scan_number"]) & {100, 106}
+
+    def test_qc_without_approved_porh_cannot_form_a_visit(self):
+        scans = pd.DataFrame(_visit_scans("A", "Hand", 100) + _visit_scans("A", "Foot", 200))
+        scans["analysis_eligible"] = ~((scans["protocol_area"] == "Foot") & (scans["phase"] == "PORH"))
+        assert select_visits(scans, _patients(("A", "HP")), n_patients=1).empty
+
     def test_takes_every_protocol_scan_of_one_visit_per_site(self):
         scans = pd.DataFrame(_visit_scans("A", "Hand", 100) + _visit_scans("A", "Foot", 200))
 

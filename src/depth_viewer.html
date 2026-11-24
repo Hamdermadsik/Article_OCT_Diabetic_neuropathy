@@ -14,8 +14,16 @@
 .depth-rail button{position:absolute;left:50%;transform:translateX(-50%);width:32px;height:32px;font-size:20px}
 .depth-rail #depth{position:absolute;left:50%;transform:translateX(-50%);writing-mode:vertical-lr;direction:ltr;width:24px;min-height:16px;margin:0}
 @media(max-width:850px){.depth-rail{height:240px}.bscan-depth-layout{grid-template-columns:minmax(0,1fr) 56px;gap:8px}}
+.scan-picker{max-width:1600px;margin:0 auto;padding:16px 24px 0}
+.scan-picker-controls{display:grid;grid-template-columns:minmax(180px,280px) minmax(0,1fr) auto;gap:12px;align-items:center}
+.scan-picker input,.scan-picker select{width:100%;min-width:0;height:38px;border:1px solid #c7d1ca;border-radius:4px;background:white;padding:7px 10px;color:inherit;font:inherit}
+.scan-picker button{width:auto;height:38px;padding:0 14px;font-size:14px;white-space:nowrap}
+.scan-load{display:flex;align-items:center;gap:12px;min-height:26px;flex-wrap:wrap}.scan-load progress{width:180px;height:7px;accent-color:#248653}
+main[aria-busy=true]{opacity:.55;pointer-events:none}
+@media(max-width:650px){.scan-picker{padding:12px 16px 0}.scan-picker-controls{grid-template-columns:minmax(0,1fr) auto}.scan-picker input{grid-column:1/-1}.scan-picker button{padding:0 10px}}
 </style></head><body>
 <header><div><h1>OCTA-dybdeviser</h1><div id="name" class="muted"></div></div><div id="state" class="state" role="status">Indlæser…</div></header><div id="error" role="alert"></div>
+<section class="scan-picker" aria-label="Vælg scan"><div class="scan-picker-controls"><input id="scan-search" type="search" placeholder="Søg filnavn…" aria-label="Søg scans efter filnavn"><select id="scan-select" aria-label="Vælg scan" disabled></select><button id="scan-open" disabled>Åbn scan &rarr;</button></div><div class="scan-load muted"><span id="scan-count" role="status"></span><progress id="scan-load-progress" hidden aria-label="Indlæsning af scan"></progress><span id="scan-load-status" role="status"></span></div></section>
 <main><section><div class="section-title"><h2>En-face MIP</h2><span id="shown-depth" class="muted"></span></div><div class="mip-surface"><img id="mip" alt="MIP af det valgte dybdelag"></div><div class="under-image muted"><span id="valid"></span><span>Fast RGB-skala: 0–255</span></div><div class="display-info muted">Dybde i pixels under beregnet hudoverflade · Intervaller [start, slut)<br>Kvadratisk MIP-oversigt; fysisk skalering er ikke verificeret · Lyserød = ugyldigt område</div></section>
 <section><div class="section-title"><h2>B-scan og aktuelt dybdelag</h2><span id="shown-index" class="muted"></span></div>
 <label for="depth" class="depth-heading muted">Dybde under hudoverfladen <output id="depth-value">0 px</output></label>
@@ -26,7 +34,65 @@
 <div class="control"><label for="index">B-scan <output id="index-value"></output></label><div class="index-stepper"><button id="previous-index" title="Forrige B-scan" aria-label="Forrige B-scan" disabled>&larr;</button><input id="index" type="number" min="0" max="119" step="1" value="60" aria-label="B-scan-nummer" disabled><button id="next-index" title="Næste B-scan" aria-label="Næste B-scan" disabled>&rarr;</button></div></div>
 <div id="requested" class="muted"></div></section></main>
 <script>
+const scanConfig=/*SCAN_CONFIG*/;
 const $=id=>document.getElementById(id);let timer=null,sequence=0,info,selectedIndex=0,rendering=false,pending=false;
+let switching=false,searchTimer=null,searchSequence=0;
+function applyInfo(data){
+ info=data;surfaceAtRight=null;$('name').textContent=info.name;
+ $('depth').min=info.minimum;$('depth').max=info.maximum;$('depth').value=info.minimum;
+ $('index').max=info.frames-1;selectedIndex=Math.floor(info.frames/2);$('index').value=selectedIndex;
+ setSwitching(false);update();
+}
+function setSwitching(value){
+ switching=value;document.querySelector('main').setAttribute('aria-busy',String(value));
+ for(const control of document.querySelectorAll('main button, main input'))control.disabled=value;
+ $('scan-select').disabled=value||!$('scan-select').options.length;
+ $('scan-open').disabled=value||!$('scan-select').value||$('scan-select').value===info?.scan_id;
+}
+async function searchScans(){
+ const ticket=++searchSequence;
+ try{
+  const response=await fetch(`/api/scans?q=${encodeURIComponent($('scan-search').value)}`);
+  if(!response.ok)throw Error('Kunne ikke hente scanlisten');
+  const data=await response.json();if(ticket!==searchSequence)return;
+  $('scan-select').replaceChildren();
+  if(!$('scan-search').value&&info&&!data.items.some(item=>item.id===info.scan_id))data.items.unshift({id:info.scan_id,name:info.name});
+  for(const item of data.items){const option=document.createElement('option');option.value=item.id;option.textContent=item.name;$('scan-select').append(option)}
+  if(data.items.some(item=>item.id===info?.scan_id))$('scan-select').value=info.scan_id;
+  $('scan-count').textContent=data.total>100?`${data.total} matches · visning begrænset til 100`:`${data.total} scans`;
+  $('scan-select').disabled=switching||!data.items.length;
+  $('scan-open').disabled=switching||!$('scan-select').value||$('scan-select').value===info?.scan_id;
+ }catch(e){if(ticket===searchSequence)error(e.message)}
+}
+function loadingStatus(data){
+ const job=data.loading;if(!job)return;
+ $('state').textContent='Indlæser…';$('scan-load-progress').hidden=false;
+ if(job.total){$('scan-load-progress').max=job.total;$('scan-load-progress').value=job.done;$('scan-load-status').textContent=`Segmenterer B-scans: ${job.done} / ${job.total}`}
+ else{$('scan-load-progress').removeAttribute('value');$('scan-load-status').textContent='Indlæser DICOM…'}
+}
+async function waitForScan(data){
+ while(data.loading){loadingStatus(data);await new Promise(resolve=>setTimeout(resolve,400));const status=await fetch('/api/info');if(!status.ok)throw Error('Kunne ikke hente indlæsningsstatus');data=await status.json()}
+ return data;
+}
+async function openScan(){
+ const key=$('scan-select').value;if(!key||switching||key===info?.scan_id)return;
+ setSwitching(true);clearTimeout(timer);timer=null;pending=false;++sequence;error('');
+ $('scan-load-status').textContent='Indlæser DICOM…';$('state').textContent='Indlæser…';
+ try{
+  const response=await fetch('/api/select',{method:'POST',headers:{'Content-Type':'application/json','X-Viewer-Token':scanConfig.token},body:JSON.stringify({id:key})});
+  let data=await response.json();if(!response.ok)throw Error(data.error||'Kunne ikke åbne scan');
+  data=await waitForScan(data);
+  if(data.load_error)throw Error(data.load_error);
+  if(data.scan_id!==key)throw Error('Et andet scan er aktivt');
+  $('scan-load-status').textContent='';applyInfo(data);
+ }catch(e){setSwitching(false);if(info)labels();error(e.message);$('state').textContent='Fejl';$('scan-load-status').textContent='Scan kunne ikke åbnes; det tidligere scan er bevaret.'}
+ finally{$('scan-load-progress').hidden=true}
+}
+$('scan-search').oninput=()=>{clearTimeout(searchTimer);++searchSequence;searchTimer=setTimeout(searchScans,150)};
+$('scan-search').onkeydown=async event=>{if(event.key==='Enter'){event.preventDefault();clearTimeout(searchTimer);await searchScans();await openScan()}};
+$('scan-select').onchange=()=>{$('scan-open').disabled=switching||$('scan-select').value===info?.scan_id};
+$('scan-select').onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();openScan()}};
+$('scan-open').onclick=openScan;
 let surfaceAtRight=null;
 function alignDepthSlider(){
  if(!info||surfaceAtRight===null)return;
@@ -46,14 +112,14 @@ function values(){return {start:Number($('depth').value),thickness:Number($('thi
 function labels(){const p=values();$('depth-value').textContent=`${p.start>=0?'+':''}${p.start} px`;$('thickness-value').textContent=`${p.thickness} px`;$('index-value').textContent=`0–${info.frames-1}`;$('previous-index').disabled=selectedIndex<=0;$('next-index').disabled=selectedIndex>=info.frames-1;$('up').disabled=p.start<=info.minimum;$('down').disabled=p.start>=info.maximum}
 function error(message){$('error').textContent=message;$('error').style.display=message?'block':'none'}
 async function render(ticket){const p=values();$('state').textContent='Opdaterer…';try{
- const r=await fetch(`/api/frame?start=${p.start}&thickness=${p.thickness}&index=${p.index}`);const data=await r.json();if(ticket!==sequence)return;if(!r.ok)throw Error(data.error||'Kunne ikke generere MIP');
+ const r=await fetch(`/api/frame?start=${p.start}&thickness=${p.thickness}&index=${p.index}&scan_id=${encodeURIComponent(info.scan_id)}`);const data=await r.json();if(ticket!==sequence)return;if(!r.ok)throw Error(data.error||'Kunne ikke generere MIP');
  const images=await Promise.all([data.mip,data.bscan].map(src=>new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(Error('Billedet kunne ikke indlæses'));img.src=src})));if(ticket!==sequence)return;
  surfaceAtRight=data.surface_at_right;alignDepthSlider();
  $('mip').src=images[0].src;$('bscan').src=images[1].src;$('shown-depth').textContent=`Overflade [${data.start}, ${data.stop}) px`;$('shown-index').textContent=`B-scan ${data.index}`;$('valid').textContent=`Gyldigt areal: ${(100*data.valid_fraction).toFixed(1)} %`;$('state').textContent=pending?'Opdaterer…':'Klar';if(!pending)$('requested').textContent='';error('');
  }catch(e){if(ticket===sequence){error(e.message);$('state').textContent='Fejl'}}}
 // Keep one request in flight and sample the latest position without waiting for a pause.
 function scheduleRender(){
- if(rendering||timer!==null||!pending)return;
+ if(switching||rendering||timer!==null||!pending)return;
  timer=setTimeout(async()=>{timer=null;rendering=true;pending=false;try{await render(++sequence)}finally{rendering=false;scheduleRender()}},60);
 }
 function update(){labels();alignDepthSlider();$('thinner').disabled=Number($('thickness').value)<=Number($('thickness').min);$('thicker').disabled=Number($('thickness').value)>=Number($('thickness').max);pending=true;$('state').textContent='Opdaterer…';const p=values();$('requested').textContent=`Valgt interval: overflade [${p.start}, ${p.start+p.thickness}) px`;scheduleRender()}
@@ -90,5 +156,5 @@ function repeatAdjustment(button,input,delta){
 }
 repeatAdjustment($('up'),$('depth'),-5);repeatAdjustment($('down'),$('depth'),5);
 repeatAdjustment($('thinner'),$('thickness'),-1);repeatAdjustment($('thicker'),$('thickness'),1);
-(async()=>{try{const r=await fetch('/api/info');if(!r.ok)throw Error('Kunne ikke indlæse scan');info=await r.json();$('name').textContent=info.name;$('depth').min=info.minimum;$('depth').max=info.maximum;$('index').max=info.frames-1;selectedIndex=Math.floor(info.frames/2);$('index').value=selectedIndex;$('index').disabled=false;update()}catch(e){error(e.message);$('state').textContent='Fejl'}})();
+(async()=>{try{setSwitching(true);const r=await fetch('/api/info');if(!r.ok)throw Error('Kunne ikke indlæse scan');const data=await waitForScan(await r.json());$('scan-load-progress').hidden=true;applyInfo(data);await searchScans();if(data.load_error)error(data.load_error)}catch(e){error(e.message);$('state').textContent='Fejl'}})();
 </script></body></html>

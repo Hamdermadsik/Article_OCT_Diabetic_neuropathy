@@ -11,6 +11,7 @@ import secrets
 import tempfile
 import threading
 import webbrowser
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -26,6 +27,7 @@ REASONS = ("noise", "motion", "signal_loss", "blur", "clipping", "segmentation",
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT = REPO_ROOT / "outputs" / "qc_mips"
 DEFAULT_REVIEWS = REPO_ROOT / "data" / "manifest" / "qc_reviews.json"
+QC_SLAB = (-5, 15)
 
 
 def file_digest(path):
@@ -101,7 +103,7 @@ def render_image(item):
     return encoded.tobytes()
 
 
-def render_bscan(item, overlay=True, opacity=1.0):
+def render_bscan(item, overlay=True, opacity=1.0, octa=False):
     """Original middle B-scan, optionally with the DEJ used by the QC pipeline."""
     if not item.get("bscan_path"):
         raise FileNotFoundError("No B-scan preview available")
@@ -113,7 +115,8 @@ def render_bscan(item, overlay=True, opacity=1.0):
         image = (image.astype(float) / 65535 * 255).astype(np.uint8)
     else:
         image = np.clip(image, 0, 255).astype(np.uint8)
-    display = cv2.cvtColor(structural_image(image), cv2.COLOR_GRAY2BGR)
+    display = (cv2.cvtColor(image, cv2.COLOR_RGB2BGR) if octa and image.ndim == 3
+               else cv2.cvtColor(structural_image(image), cv2.COLOR_GRAY2BGR))
     if overlay and opacity > 0:
         original = display.copy()
         valid = np.isfinite(dej) & (dej >= 0) & (dej < image.shape[0])
@@ -132,6 +135,16 @@ def render_bscan(item, overlay=True, opacity=1.0):
 
 
 class ReviewStore:
+    def add_generated(self, path):
+        items, _ = discover_images(Path(path).parent, Path(path).name)
+        with self.lock:
+            for item in items:
+                if item["id"] not in self.by_id:
+                    self.items.append(item)
+                else:
+                    self.items = [item if old["id"] == item["id"] else old for old in self.items]
+                self.by_id[item["id"]] = item
+
     def __init__(self, items, path, reviewer, manifest_dir=None):
         self.items = items
         self.by_id = {item["id"]: item for item in items}
@@ -231,13 +244,18 @@ class ReviewStore:
             return output.getvalue().encode("utf-8-sig")
 
 
-def generate_qc_mips(paths, output_dir, model=None, device=None, manifest_dir=None):
-    """Generate the original DEJ +0..+15 inclusive MIP, without detecting dots."""
+def generate_qc_mips(paths, output_dir, model=None, device=None, manifest_dir=None,
+                     manifest_lock=None, on_generated=None):
+    """Generate DEJ -5..+15 inclusive QC MIPs, without detecting dots."""
     import torch
     from model_utils import default_model_path, load_pytorch_model
     from papi import EN_FACE_SIZE, import_dicom, papillary_dermis_mip, test_model_on_sample_image
     from skimage.transform import resize
     from manifest.generation import generation_counts, update_generation
+
+    def record_generation(*args, **kwargs):
+        with manifest_lock if manifest_lock is not None else nullcontext():
+            update_generation(*args, **kwargs)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -246,7 +264,7 @@ def generate_qc_mips(paths, output_dir, model=None, device=None, manifest_dir=No
     if len({path.name for path in paths}) != len(paths):
         raise ValueError("Duplicate DICOM filename in generation queue")
     if manifest_dir is not None:
-        update_generation(manifest_dir, paths, output_dir=output_dir)
+        record_generation(manifest_dir, paths, output_dir=output_dir)
     generated = []
     for number, path in enumerate(paths, 1):
         target = output_dir / f"{path.stem}_qc_mip.png"
@@ -254,26 +272,29 @@ def generate_qc_mips(paths, output_dir, model=None, device=None, manifest_dir=No
         try:
             have_mip = target.exists() and cv2.imread(str(target)) is not None
             have_preview = False
+            matching_slab = False
             if preview.exists():
                 try:
                     with np.load(preview, allow_pickle=False) as data:
                         have_preview = (data["image"].ndim in (2, 3)
                                         and data["dej"].shape == (data["image"].shape[1],)
                                         and 0 <= int(data["index"]) < int(data["num_frames"]))
+                        matching_slab = "slab" in data and np.array_equal(data["slab"], QC_SLAB)
                 except (OSError, ValueError, KeyError):
                     pass
+            have_mip = have_mip and matching_slab
             if have_mip and have_preview:
                 print(f"[{number}/{len(paths)}] Already generated: {path.name}", flush=True)
             else:
                 if manifest_dir is not None:
-                    update_generation(manifest_dir, [path], "processing", output_dir)
+                    record_generation(manifest_dir, [path], "processing", output_dir)
                 print(f"[{number}/{len(paths)}] Generating: {path.name}", flush=True)
                 if model is None:
                     model = load_pytorch_model(default_model_path(), device)
                 volume, _, _ = import_dicom(path)
                 index = len(volume) // 2
                 if not have_mip:
-                    mip, dej, _ = papillary_dermis_mip(volume, model, device, slab=(0, 15))
+                    mip, dej, _ = papillary_dermis_mip(volume, model, device, slab=QC_SLAB)
                     preview_dej = dej[index]
                     display = resize(mip, EN_FACE_SIZE, anti_aliasing=True, order=1)
                     # Same per-image linear display scaling as the original grayscale plot.
@@ -291,18 +312,21 @@ def generate_qc_mips(paths, output_dir, model=None, device=None, manifest_dir=No
                     temp = Path(handle.name)
                     try:
                         np.savez_compressed(handle, image=volume[index], dej=preview_dej,
-                                            index=index, num_frames=len(volume), provenance=provenance)
+                                            index=index, num_frames=len(volume), provenance=provenance,
+                                            slab=np.array(QC_SLAB))
                     except BaseException:
                         temp.unlink(missing_ok=True)
                         raise
                 temp.replace(preview)
             if manifest_dir is not None:
-                update_generation(manifest_dir, [path], "ready", output_dir)
+                record_generation(manifest_dir, [path], "ready", output_dir)
             generated.append(target)
+            if on_generated is not None:
+                on_generated(target)
         except Exception as error:
             if manifest_dir is None:
                 raise
-            update_generation(manifest_dir, [path], "failed", output_dir, str(error))
+            record_generation(manifest_dir, [path], "failed", output_dir, str(error))
             print(f"FAILED: {path.name}: {error}", flush=True)
     if manifest_dir is not None:
         print(f"Generation progress: {generation_counts(manifest_dir)}", flush=True)
@@ -355,7 +379,8 @@ def make_server(store, port=8765, show_names=False, warnings=()):
                         query = parse_qs(urlparse(self.path).query)
                         overlay = query.get("overlay", ["1"])[0] == "1"
                         opacity = float(query.get("opacity", ["1"])[0])
-                        self.respond(render_bscan(item, overlay, opacity), "image/png")
+                        octa = query.get("octa", ["0"])[0] == "1"
+                        self.respond(render_bscan(item, overlay, opacity, octa=octa), "image/png")
                 else:
                     self.respond(b"Not found", "text/plain", 404)
             except (OSError, ValueError) as error:
@@ -384,11 +409,30 @@ def make_server(store, port=8765, show_names=False, warnings=()):
     return ThreadingHTTPServer(("127.0.0.1", port), Handler)
 
 
+def manifest_generation_paths(manifest_dir):
+    import pandas as pd
+    scans = pd.read_csv(Path(manifest_dir) / "scans.csv")
+    required = {"filename", "filepath", "excluded"}
+    if not required.issubset(scans.columns):
+        raise ValueError("Manifest must contain filename, filepath and excluded")
+    # Unknown exclusion values must not accidentally become approval.
+    included = scans["excluded"].map(lambda value: str(value).lower() in {"false", "0"})
+    queue = scans.loc[included]
+    if queue["filename"].duplicated().any():
+        raise ValueError("Duplicate included filenames in manifest")
+    paths = [Path(p) for p in queue["filepath"]]
+    if any(path.name != name for path, name in zip(paths, queue["filename"])):
+        raise ValueError("Manifest filename disagrees with filepath")
+    return paths
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("folder", nargs="?", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--pattern", help="Image pattern (default: '*_qc_mip.png')")
     parser.add_argument("--generate-from", type=Path, help="Generate the original QC MIP from a DICOM file or folder")
+    parser.add_argument("--generate-manifest", action="store_true",
+                        help="Generate non-excluded manifest scans while serving the review UI")
     parser.add_argument("--reviewer", required=True)
     parser.add_argument("--results", type=Path, default=DEFAULT_REVIEWS, help="Persistent scan-level QC decisions")
     parser.add_argument("--manifest-dir", type=Path, default=REPO_ROOT / "data" / "manifest")
@@ -396,6 +440,8 @@ def main():
     parser.add_argument("--show-names", action="store_true")
     parser.add_argument("--open", action="store_true", help="Open in the default browser")
     args = parser.parse_args()
+    if args.generate_manifest and args.generate_from:
+        parser.error("Choose --generate-manifest or --generate-from, not both")
     try:
         if args.generate_from:
             paths = ([args.generate_from] if args.generate_from.is_file() else
@@ -407,6 +453,7 @@ def main():
         store = ReviewStore(items, args.results, args.reviewer, args.manifest_dir)
         from manifest.qc import sync_manifest_qc
         sync_manifest_qc(args.manifest_dir, args.results)
+        queue = manifest_generation_paths(args.manifest_dir) if args.generate_manifest else []
     except (OSError, ValueError) as error:
         parser.error(str(error))
     for port in range(args.port, min(args.port + 20, 65536)):
@@ -419,10 +466,18 @@ def main():
     else:
         parser.error("No free local port found")
     url = f"http://127.0.0.1:{server.server_port}"
-    print(f"Manual MIP review: {url}\nScans: {len(items)}\nQC MIP: DEJ +0..+15 px (inclusive)\n"
+    print(f"Manual MIP review: {url}\nScans: {len(items)}\nQC MIP: DEJ -5..+15 px (inclusive)\n"
           f"Reviews: {store.path}\nSource images are never moved or deleted.", flush=True)
     for warning in warnings:
         print(f"WARNING: {warning}", flush=True)
+    if queue:
+        def generate():
+            try:
+                generate_qc_mips(queue, args.folder, manifest_dir=args.manifest_dir,
+                                 manifest_lock=store.lock, on_generated=store.add_generated)
+            except Exception as error:
+                print(f"Generation stopped: {error}", flush=True)
+        threading.Thread(target=generate, name="qc-generation", daemon=True).start()
     if args.open:
         webbrowser.open(url)
     try:

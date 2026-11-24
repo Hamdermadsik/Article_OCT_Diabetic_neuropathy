@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import threading
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -11,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from qc_review import ReviewStore, discover_images, generate_qc_mips, make_server, render_image, render_bscan
+from qc_review import ReviewStore, discover_images, generate_qc_mips, make_server, render_image, render_bscan, manifest_generation_paths
 from manifest.qc import apply_qc_reviews, load_qc_reviews, sync_manifest_qc
 
 
@@ -114,6 +115,31 @@ def test_regenerated_mip_keeps_decision(inputs, tmp_path):
     assert ReviewStore(refreshed, store.path, "A").snapshot()["reviews"][items[0]["id"]]["status"] == "use"
 
 
+def test_newly_generated_images_appear_without_touching_reviews(inputs, tmp_path):
+    store = ReviewStore(discover_images(inputs)[0], tmp_path / "reviews.json", "A")
+    store.save(payload(store, status="unsure"))
+    saved = store.path.read_bytes()
+    added = inputs / "new_scan_qc_mip.png"
+    cv2.imwrite(str(added), np.zeros((4, 4), np.uint8))
+    store.add_generated(added)
+    store.add_generated(added)
+    assert len(store.snapshot()["items"]) == 2
+    assert store.path.read_bytes() == saved
+
+
+def test_generation_queue_preserves_exclusions_and_does_not_require_qc_approval(tmp_path):
+    scans = pd.DataFrame({"filename": ["A.dcm", "B.dcm", "B.dcm", "C.dcm"],
+                          "filepath": ["/drive/A.dcm", "/drive/B.dcm", "/copy/B.dcm", "/drive/C.dcm"],
+                          "excluded": [False, False, True, None],
+                          "qc_status": ["unreviewed"] * 4})
+    scans.to_csv(tmp_path / "scans.csv", index=False)
+    assert manifest_generation_paths(tmp_path) == [Path("/drive/A.dcm"), Path("/drive/B.dcm")]
+    scans.loc[2, "excluded"] = False
+    scans.to_csv(tmp_path / "scans.csv", index=False)
+    with pytest.raises(ValueError, match="Duplicate"):
+        manifest_generation_paths(tmp_path)
+
+
 def test_generate_original_slab(monkeypatch, tmp_path):
     import papi
     seen = []
@@ -124,7 +150,7 @@ def test_generate_original_slab(monkeypatch, tmp_path):
         return np.array([[0., 5., 10.], [0., 5., 10.]]), np.full((2, 3), 5), None
     monkeypatch.setattr(papi, "papillary_dermis_mip", mip)
     files = generate_qc_mips([tmp_path / "AC.dcm"], tmp_path / "mips", model=object(), device="cpu")
-    assert seen == [(0, 15)]
+    assert seen == [(-5, 15)]
     assert files[0].name == "AC_qc_mip.png"
     assert cv2.imread(str(files[0])).shape == (4, 4, 3)
     with np.load(tmp_path / "mips" / "AC_qc_bscan.npz") as preview:
@@ -132,24 +158,37 @@ def test_generate_original_slab(monkeypatch, tmp_path):
         assert int(preview["num_frames"]) == 2
         np.testing.assert_array_equal(preview["dej"], [5, 5, 5])
         assert str(preview["provenance"]) == "same_segmentation_as_mip"
+        np.testing.assert_array_equal(preview["slab"], [-5, 15])
+    generate_qc_mips([tmp_path / "AC.dcm"], tmp_path / "mips", model=object(), device="cpu")
+    assert seen == [(-5, 15)]
 
 
-def test_existing_mip_gets_preview_without_regenerating_it(monkeypatch, tmp_path):
+@pytest.mark.parametrize("old_slab", [None, [0, 15]])
+def test_existing_mip_with_missing_or_old_slab_is_regenerated(monkeypatch, tmp_path, old_slab):
     import papi
     folder = tmp_path / "mips"
     folder.mkdir()
     target = folder / "AC_qc_mip.png"
     cv2.imwrite(str(target), np.full((4, 4), 70, np.uint8))
     original = target.read_bytes()
+    if old_slab is not None:
+        np.savez(folder / "AC_qc_bscan.npz", image=np.zeros((20, 4, 3), np.uint8),
+                 dej=np.full(4, 5), index=1, num_frames=3, slab=old_slab)
     monkeypatch.setattr(papi, "import_dicom", lambda path: (np.zeros((3, 20, 4, 3), np.uint8), None, None))
     mask = np.zeros((20, 4), bool)
     mask[2:6, :3] = True
     monkeypatch.setattr(papi, "test_model_on_sample_image", lambda *args: mask)
-    monkeypatch.setattr(papi, "papillary_dermis_mip", lambda *a, **kw: pytest.fail("MIP must not be recalculated"))
+    seen = []
+    def mip(*args, slab):
+        seen.append(slab)
+        return np.arange(12, dtype=float).reshape(3, 4), np.tile([5, 5, 5, -1], (3, 1)), None
+    monkeypatch.setattr(papi, "EN_FACE_SIZE", (4, 4))
+    monkeypatch.setattr(papi, "papillary_dermis_mip", mip)
     generate_qc_mips([tmp_path / "AC.dcm"], folder, model=object(), device="cpu")
-    assert target.read_bytes() == original
+    assert target.read_bytes() != original
+    assert seen == [(-5, 15)]
     items, _ = discover_images(folder)
-    assert items[0]["bscan"] == {"index": 1, "num_frames": 3, "recomputed": True}
+    assert items[0]["bscan"] == {"index": 1, "num_frames": 3, "recomputed": False}
     with np.load(items[0]["bscan_path"]) as preview:
         np.testing.assert_array_equal(preview["dej"], [5, 5, 5, -1])
 
@@ -166,6 +205,8 @@ def test_bscan_toggle_and_missing_preview(inputs):
     plain = cv2.imdecode(np.frombuffer(render_bscan(items[0], False), np.uint8), cv2.IMREAD_COLOR)
     overlay = cv2.imdecode(np.frombuffer(render_bscan(items[0], True), np.uint8), cv2.IMREAD_COLOR)
     np.testing.assert_array_equal(plain, np.full_like(image, 40))
+    colored = cv2.imdecode(np.frombuffer(render_bscan(items[0], False, octa=True), np.uint8), cv2.IMREAD_COLOR)
+    np.testing.assert_array_equal(colored, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
     assert np.any(overlay != plain)
     np.testing.assert_array_equal(overlay[15], plain[15])
     invisible = cv2.imdecode(np.frombuffer(render_bscan(items[0], opacity=0), np.uint8), cv2.IMREAD_COLOR)

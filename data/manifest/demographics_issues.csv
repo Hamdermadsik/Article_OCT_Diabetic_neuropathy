@@ -1,0 +1,19 @@
+cohort,participant_id,initials,issue,detail
+may_2021,HP-48-MP,MP,matched_by_initials_only,no row for HP-48-MP; used the row listed only as 'MP' (M/64)
+october_2020,AF,AF,resolved_group_from_sheet,group HP from demographics sheet row HP-08-AF (same initials and age)
+october_2020,AG,AG,resolved_group_from_sheet,group HP from demographics sheet row HP-11-AG (same initials and age)
+october_2020,ES,ES,resolved_group_from_sheet,group HP from demographics sheet row HP-10-ES (same initials and age)
+october_2020,GU,GU,resolved_group_from_sheet,group HP from demographics sheet row HP-04-GU (same initials and age)
+october_2020,GW,GW,resolved_group_from_sheet,group HP from demographics sheet row HP-18-GW (same initials and age)
+october_2020,GW,GW,resolved_sex_from_sheet,October log has no sex; took F from demographics sheet row HP-18-GW (same initials and age)
+october_2020,IT,IT,resolved_group_from_sheet,group HP from demographics sheet row HP-05-IT (same initials and age)
+october_2020,IT,IT,resolved_sex_from_sheet,October log has no sex; took M from demographics sheet row HP-05-IT (same initials and age)
+october_2020,MB,MB,resolved_group_from_sheet,group HP from demographics sheet row HP-03-MB (same initials and age)
+october_2020,MF,MF,resolved_group_from_sheet,group HP from demographics sheet row HP-06-MF (same initials and age)
+october_2020,PC,PC,resolved_group_from_sheet,group HP from demographics sheet row HP-19-PC (same initials and age)
+october_2020,PC,PC,resolved_sex_from_sheet,October log has no sex; took F from demographics sheet row HP-19-PC (same initials and age)
+october_2020,PM,PM,sources_disagree,October scan log says M/27; demographics sheet row HP-09-PM says F/27
+october_2020,VM,VM,resolved_group_from_sheet,group HP from demographics sheet row HP-07-VM (same initials and age)
+may_2021,HP-35-LM,LM,resolved_conflict,"same person as October LM; kept F/54, discarded F/45"
+october_2020,DH,DH,resolved_missing,same person as DP-13-DH; took sex/age from that record
+may_2021,HP-53-RM,RM,resolved_conflict,"different person from October RM, who matches the M/26 row; kept M/65"

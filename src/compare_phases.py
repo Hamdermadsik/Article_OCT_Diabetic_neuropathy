@@ -65,6 +65,9 @@ def select_visits(
         & ~scans["excluded"].astype(bool)
         & scans["protocol_area"].isin(SITES)
     ]
+    if "analysis_eligible" in usable.columns:
+        approved = usable["analysis_eligible"].map(lambda value: str(value).lower() == "true")
+        usable = usable.loc[approved]
     phases_per_visit = usable.groupby(["patient_id", "protocol_area", "date"])["phase"].apply(set)
     complete = phases_per_visit[phases_per_visit.apply(lambda p: {"Baseline", "PORH"} <= p)]
     sites_per_patient = complete.reset_index().groupby("patient_id")["protocol_area"].apply(set)

@@ -1,0 +1,7 @@
+initials,may_participant_id,may_sex,may_age,october_participant_id,october_sex,october_age,assessment,decision
+CH,HP-20-CH,M,46.0,CH,M,46.0,same sex and age: likely the same person,same person
+DH,DP-13-DH,M,66.0,DH,M,66.0,same sex and age: likely the same person,same person
+LM,HP-35-LM,F,54.0,LM,F,54.0,same sex and age: likely the same person,same person
+MB,HP-49-MB,M,44.0,MB,F,28.0,different sex: different people,different people
+PM,HP-48-PM,M,76.0,PM,M,27.0,age differs (76 vs 27): likely different people,different people
+RM,HP-53-RM,M,65.0,RM,M,26.0,age differs (65 vs 26): likely different people,different people

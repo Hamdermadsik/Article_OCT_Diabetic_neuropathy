@@ -1,0 +1,14 @@
+cohort,participant_id,excel_column,raw_value,issue,action
+may_2021,DP-14-AT,Foot baseline flavanol + Hand PORH.1,3804,"scans 3804 on 2021-06-02 are listed under Foot baseline flavanol and Hand PORH.1, on different body sites - each file's body site decides which applies",resolved_by_body_site
+may_2021,HP-26-NB,Foot Baseline + Foot PORH,2200-2204,"scans 2200-2204 on 2021-05-19 are listed under Foot Baseline and Foot PORH on the same body site, so their phase cannot be determined",excluded
+may_2021,HP-26-NB,Foot Isc + Foot PORH,2205,"scans 2205 on 2021-05-19 are listed under Foot Isc and Foot PORH on the same body site, so their phase cannot be determined",excluded
+may_2021,HP-32-VF,Foot Baseline + Hand PORH.1,1545-1549,"scans 1545-1549 on 2021-05-12 are listed under Foot Baseline and Hand PORH.1, on different body sites - each file's body site decides which applies",resolved_by_body_site
+may_2021,HP-32-VF,Hand Baseline Flavanol + Hand PORH,1538-1542,"scans 1538-1542 on 2021-05-12 are listed under Hand Baseline Flavanol and Hand PORH on the same body site, so their phase cannot be determined",excluded
+may_2021,HP-37-LB,Foot baseline flavanol + Hand PORH.1,4199,"scans 4199 on 2021-06-04 are listed under Foot baseline flavanol and Hand PORH.1, on different body sites - each file's body site decides which applies",resolved_by_body_site
+may_2021,HP-40-HL,Foot Baseline + Hand PORH,3105-3109,"scans 3105-3109 on 2021-03-27 are listed under Foot Baseline and Hand PORH, on different body sites - each file's body site decides which applies",resolved_by_body_site
+may_2021,HP-40-HL,Foot Isc + Hand PORH,3110,"scans 3110 on 2021-03-27 are listed under Foot Isc and Hand PORH, on different body sites - each file's body site decides which applies",resolved_by_body_site
+may_2021,HP-40-HL,Foot PORH + Hand PORH,3111-3114,"scans 3111-3114 on 2021-03-27 are listed under Foot PORH and Hand PORH, on different body sites - each file's body site decides which applies",resolved_by_body_site
+may_2021,HP-40-HL,Foot Baseline + Foot PORH,2312,"scans 2312 on 2021-05-20 are listed under Foot Baseline and Foot PORH on the same body site, so their phase cannot be determined",excluded
+may_2021,HP-40-HL,Foot Isc + Foot PORH,2315,"scans 2315 on 2021-05-20 are listed under Foot Isc and Foot PORH on the same body site, so their phase cannot be determined",excluded
+may_2021,HP-48-PM,Foot Baseline + Hand PORH,3726,"scans 3726 on 2021-06-01 are listed under Foot Baseline and Hand PORH, on different body sites - each file's body site decides which applies",resolved_by_body_site
+may_2021,HP-60-PW,Hand Baseline + Hand Isc + Hand PORH,4114,"scans 4114 on 2021-06-04 are listed under Hand Baseline and Hand Isc and Hand PORH on the same body site, so their phase cannot be determined",excluded
