@@ -49,6 +49,8 @@ if __package__ in (None, ""):  # allow `python src/manifest/build_manifest.py`
     )
     from manifest.parse_may import load_may_sheet, parse_may
     from manifest.parse_october import load_october_sheets, parse_october
+    from manifest.qc import apply_qc_reviews, write_segmentation_candidates
+    from manifest.generation import apply_generation
 else:
     from . import cohort_specs as specs
     from .demographics import (
@@ -80,6 +82,8 @@ else:
     )
     from .parse_may import load_may_sheet, parse_may
     from .parse_october import load_october_sheets, parse_october
+    from .qc import apply_qc_reviews, write_segmentation_candidates
+    from .generation import apply_generation
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -227,6 +231,8 @@ def main() -> int:
         "--october-drive", type=Path, default=DEFAULT_DRIVE_ROOTS[specs.OCTOBER_COHORT]
     )
     parser.add_argument("--out-dir", type=Path, default=None)
+    parser.add_argument("--qc-reviews", type=Path, default=None,
+                        help="scan QC decisions (default: <repo>/data/manifest/qc_reviews.json)")
     parser.add_argument(
         "--decisions",
         type=Path,
@@ -363,6 +369,11 @@ def main() -> int:
             )
         )
 
+    review_path = args.qc_reviews or repo / "data" / "manifest" / "qc_reviews.json"
+    scans = apply_qc_reviews(scans, review_path)
+    scans = apply_generation(scans, out_dir)
+    print(f"  QC: {int(scans['analysis_eligible'].sum())}/{len(scans)} scans approved and otherwise eligible for analysis")
+
     patients = participants[PATIENT_COLUMNS].sort_values(["patient_id", "cohort"]).reset_index(
         drop=True
     )
@@ -376,6 +387,8 @@ def main() -> int:
     print(f"Writing manifest to {out_dir}...")
     patients.to_csv(out_dir / "patients.csv", index=False)
     scans.to_csv(out_dir / "scans.csv", index=False)
+    scans.loc[scans["analysis_eligible"]].to_csv(out_dir / "scans_for_analysis.csv", index=False)
+    write_segmentation_candidates(scans, out_dir)
     legacy.to_csv(out_dir / "frames.csv", index=False)
 
     errors = []
