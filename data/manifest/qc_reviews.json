@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "revision": 2980,
+  "revision": 3013,
   "reviews": {
     "b46baa3283068811456fb630030297918a801b4d8efb728092d2a1e2a860f628": {
       "status": "use",
@@ -21671,11 +21671,11 @@
       "qc_bscan_index": 60
     },
     "7bf824f7b48949e4236f4211d90cf80cacead195e6b66d857953730d37f76a60": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:05:45.079056+00:00",
+      "reviewed_at": "2026-11-24T10:36:51.493084+00:00",
       "filename": "VF_Right Instep_L1024_S1550__12_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -21698,20 +21698,20 @@
       "qc_bscan_index": 60
     },
     "97c5f4542b26455f62512306182af232535e451371385d67cf6ac5dc9ee17dff": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:05:48.595560+00:00",
+      "reviewed_at": "2026-11-24T10:36:57.250249+00:00",
       "filename": "VF_Right Instep_L1024_S1553__12_05_2021.dcm",
       "qc_bscan_index": 60
     },
     "eb52912ac69c4db96d39e014c6eb43a9b4d2f03f4fc78af2d644eb3aeb2a32d2": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:05:49.456431+00:00",
+      "reviewed_at": "2026-11-24T10:36:59.615211+00:00",
       "filename": "VF_Right Instep_L1024_S1554__12_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -21846,7 +21846,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:06:01.021461+00:00",
+      "reviewed_at": "2026-11-24T10:38:03.550541+00:00",
       "filename": "VR_Right Hand_L1054_S2513__21_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -21855,7 +21855,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:06:02.161432+00:00",
+      "reviewed_at": "2026-11-24T10:38:04.852926+00:00",
       "filename": "VR_Right Hand_L1054_S2514__21_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -22004,20 +22004,20 @@
       "qc_bscan_index": 60
     },
     "38e815ad638fb7fde067d166a466bce735232ec2c10e9b10df3a6f1e4a11591c": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:06:15.652247+00:00",
+      "reviewed_at": "2026-11-24T10:38:29.312802+00:00",
       "filename": "VR_Right Instep_L1055_S2531__21_05_2021.dcm",
       "qc_bscan_index": 60
     },
     "beee44f379ade81165235afe2667335190b0c5b0b9d86523ad1a72b2d9a448b7": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:06:16.438480+00:00",
+      "reviewed_at": "2026-11-24T10:38:31.160851+00:00",
       "filename": "VR_Right Instep_L1055_S2532__21_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -22026,7 +22026,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:06:17.269372+00:00",
+      "reviewed_at": "2026-11-24T10:38:33.776597+00:00",
       "filename": "VR_Right Instep_L1055_S2533__21_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -22035,7 +22035,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:06:17.952226+00:00",
+      "reviewed_at": "2026-11-24T10:38:35.184913+00:00",
       "filename": "VR_Right Instep_L1055_S2534__21_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -22044,7 +22044,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:06:18.605400+00:00",
+      "reviewed_at": "2026-11-24T10:38:36.487746+00:00",
       "filename": "VR_Right Instep_L1055_S2535__21_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -22053,7 +22053,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:06:19.420173+00:00",
+      "reviewed_at": "2026-11-24T10:38:37.785378+00:00",
       "filename": "VR_Right Instep_L1055_S2536__21_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -22062,7 +22062,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:06:20.121255+00:00",
+      "reviewed_at": "2026-11-24T10:38:39.052104+00:00",
       "filename": "WL_Right Hallux_L1073_S2982__26_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -22071,7 +22071,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:06:20.795834+00:00",
+      "reviewed_at": "2026-11-24T10:38:40.333641+00:00",
       "filename": "WL_Right Hallux_L1073_S2983__26_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -22080,7 +22080,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:06:21.446839+00:00",
+      "reviewed_at": "2026-11-24T10:38:41.587545+00:00",
       "filename": "WL_Right Hallux_L1073_S2984__26_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -22089,7 +22089,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:06:22.135561+00:00",
+      "reviewed_at": "2026-11-24T10:38:42.844314+00:00",
       "filename": "WL_Right Hallux_L1073_S2985__26_05_2021.dcm",
       "qc_bscan_index": 60
     },
@@ -25314,13 +25314,13 @@
       "qc_bscan_index": 60
     },
     "96b8e079e1d342c0294ab74c1d047d72701dbf3e274993e609e820516f933837": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [
         "segmentation"
       ],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:17:38.129155+00:00",
+      "reviewed_at": "2026-11-24T10:36:12.149865+00:00",
       "filename": "TL_Right Instep_L1038_S521__13_10_2020.dcm",
       "qc_bscan_index": 60
     },
@@ -25343,47 +25343,47 @@
       "qc_bscan_index": 60
     },
     "65449e3680949320a117fb87b0a1bfc5cf34d41010636e67fd213a7ab90c8456": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:17:49.679722+00:00",
+      "reviewed_at": "2026-11-24T10:36:17.055262+00:00",
       "filename": "TL_Right Instep_L1038_S524__13_10_2020.dcm",
       "qc_bscan_index": 60
     },
     "a4687ef690cf3f3427cea2e0a70498abde54b0c06891afaa7f5faef8fdc4d653": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:17:50.677001+00:00",
+      "reviewed_at": "2026-11-24T10:36:18.991334+00:00",
       "filename": "TL_Right Instep_L1038_S525__13_10_2020.dcm",
       "qc_bscan_index": 60
     },
     "ade9562a489d508b334ddb7b1384e7af4048d7f5f137b62991321c529043b3de": {
-      "status": "use",
+      "status": "discard",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:17:57.468278+00:00",
+      "reviewed_at": "2026-11-24T10:35:59.744681+00:00",
       "filename": "TL_Right Instep_L1038_S526__13_10_2020.dcm",
       "qc_bscan_index": 60
     },
     "132245d321a920779f8e711409eeb2a80be02ad9d0ca3a1f353ba25e8b1203dd": {
-      "status": "use",
+      "status": "discard",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:17:59.120164+00:00",
+      "reviewed_at": "2026-11-24T10:36:02.998226+00:00",
       "filename": "TL_Right Instep_L1038_S527__13_10_2020.dcm",
       "qc_bscan_index": 60
     },
     "db629d872a17a31bb290d0c4d36224b9cb2e17dc96011c082cf819b931ec9cd2": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:18:00.362529+00:00",
+      "reviewed_at": "2026-11-24T10:36:20.623144+00:00",
       "filename": "TL_Right Instep_L1038_S528__13_10_2020.dcm",
       "qc_bscan_index": 60
     },
@@ -25397,20 +25397,20 @@
       "qc_bscan_index": 60
     },
     "cccfe401ae0c967059c455aecce6dd10100198ab203683ea96b153bd1892a18e": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:18:04.073587+00:00",
+      "reviewed_at": "2026-11-24T10:37:23.216181+00:00",
       "filename": "VM_Right Hand_L1015_S257__07_10_2020.dcm",
       "qc_bscan_index": 60
     },
     "26e5930792b06ebb2906f55186f75c1b7a9b8e5512fd2ed41f0e59d075b136c2": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:18:05.225287+00:00",
+      "reviewed_at": "2026-11-24T10:37:25.202735+00:00",
       "filename": "VM_Right Hand_L1015_S258__07_10_2020.dcm",
       "qc_bscan_index": 60
     },
@@ -25433,11 +25433,11 @@
       "qc_bscan_index": 60
     },
     "5ad2994b0899aa188c1390180bf018cc7ccf321d91ef9d2ef61dd03a5cfcab2f": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:18:08.227699+00:00",
+      "reviewed_at": "2026-11-24T10:37:32.677057+00:00",
       "filename": "VM_Right Hand_L1015_S261__07_10_2020.dcm",
       "qc_bscan_index": 60
     },
@@ -25451,11 +25451,11 @@
       "qc_bscan_index": 60
     },
     "24943e9494da2c10581d17fb3b2e3af0fe62692d8e58c3c8aa09c45d77e3f97d": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:18:10.157046+00:00",
+      "reviewed_at": "2026-11-24T10:37:37.642192+00:00",
       "filename": "VM_Right Hand_L1015_S264__07_10_2020.dcm",
       "qc_bscan_index": 60
     },
@@ -25487,11 +25487,11 @@
       "qc_bscan_index": 60
     },
     "5ca122b65e7b43086c6a60a3902a1c17aabe8ad856449a05f490f45786259a17": {
-      "status": "use",
+      "status": "unsure",
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:18:31.748233+00:00",
+      "reviewed_at": "2026-11-24T10:37:51.282366+00:00",
       "filename": "VM_Right Instep_L1016_S268__07_10_2020.dcm",
       "qc_bscan_index": 60
     },
@@ -25509,7 +25509,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:18:34.500913+00:00",
+      "reviewed_at": "2026-11-24T10:37:53.628890+00:00",
       "filename": "VM_Right Instep_L1016_S270__07_10_2020.dcm",
       "qc_bscan_index": 60
     },
@@ -25518,7 +25518,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:18:35.299657+00:00",
+      "reviewed_at": "2026-11-24T10:37:55.094506+00:00",
       "filename": "VM_Right Instep_L1016_S271__07_10_2020.dcm",
       "qc_bscan_index": 60
     },
@@ -25527,7 +25527,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:18:48.414626+00:00",
+      "reviewed_at": "2026-11-24T10:37:56.536185+00:00",
       "filename": "VM_Right Instep_L1016_S272__07_10_2020.dcm",
       "qc_bscan_index": 60
     },
@@ -25536,7 +25536,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:18:49.891248+00:00",
+      "reviewed_at": "2026-11-24T10:37:57.958915+00:00",
       "filename": "VM_Right Instep_L1016_S274__07_10_2020.dcm",
       "qc_bscan_index": 60
     },
@@ -25554,7 +25554,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:18:57.824545+00:00",
+      "reviewed_at": "2026-11-24T10:37:59.268377+00:00",
       "filename": "VM_Right Instep_L1016_S276__07_10_2020.dcm",
       "qc_bscan_index": 60
     },
@@ -25563,7 +25563,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:18:58.578426+00:00",
+      "reviewed_at": "2026-11-24T10:38:00.816128+00:00",
       "filename": "VM_Right Instep_L1016_S277__07_10_2020.dcm",
       "qc_bscan_index": 60
     },
@@ -25572,7 +25572,7 @@
       "reasons": [],
       "note": "",
       "reviewer": "Magnus",
-      "reviewed_at": "2026-11-18T10:19:03.527509+00:00",
+      "reviewed_at": "2026-11-24T10:38:02.135080+00:00",
       "filename": "VM_Right Instep_L1016_S278__07_10_2020.dcm",
       "qc_bscan_index": 60
     }
